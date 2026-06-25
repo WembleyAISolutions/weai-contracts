@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/error-denial/v0.1/schema.json",
+  "title": "Error / Denial Contract (v0.1)",
+  "description": "Public-safe baseline schema for first-class denial and error responses. Constrains structure, types, and public outcome enums only; reason_code values are open and not enumerated at this version.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["contract_family", "contract_version"],
+  "properties": {
+    "contract_family": { "const": "error-denial" },
+    "contract_version": { "const": "v0.1" },
+    "example_id": { "type": "string" },
+    "description": { "type": "string" },
+    "examples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["response"],
+        "properties": {
+          "case": { "type": "string" },
+          "response": { "$ref": "#/$defs/denialResponse" }
+        }
+      }
+    },
+    "response": { "$ref": "#/$defs/denialResponse" },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "denialResponse": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["outcome"],
+      "properties": {
+        "outcome": { "type": "string", "enum": ["denied", "error"] },
+        "reason_code": { "type": "string" },
+        "reason": { "type": "string" },
+        "request_ref": { "type": "string" },
+        "occurred_at": { "type": "string" }
+      }
+    }
+  }
+}
