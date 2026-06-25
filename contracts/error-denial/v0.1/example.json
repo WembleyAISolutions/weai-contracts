@@ -1,0 +1,44 @@
+{
+  "contract_family": "error-denial",
+  "contract_version": "v0.1",
+  "example_id": "error-denial-example-001",
+  "description": "Denial and error are first-class, contracted outcomes. A consumer receives a structured denial or error in response to a request. Field values below are placeholders for illustration only.",
+  "examples": [
+    {
+      "case": "denied",
+      "response": {
+        "outcome": "denied",
+        "reason_code": "not_permitted",
+        "reason": "The request is not permitted under the consumer's agreed contract scope.",
+        "request_ref": "<request-reference>",
+        "occurred_at": "<iso-8601-timestamp>"
+      }
+    },
+    {
+      "case": "invalid",
+      "response": {
+        "outcome": "error",
+        "reason_code": "invalid_request",
+        "reason": "The request did not conform to the agreed contract shape.",
+        "request_ref": "<request-reference>",
+        "occurred_at": "<iso-8601-timestamp>"
+      }
+    },
+    {
+      "case": "ambiguous",
+      "response": {
+        "outcome": "denied",
+        "reason_code": "ambiguous_request",
+        "reason": "The request could not be resolved unambiguously and was denied by default.",
+        "request_ref": "<request-reference>",
+        "occurred_at": "<iso-8601-timestamp>"
+      }
+    }
+  ],
+  "notes": [
+    "outcome is one of: denied | error.",
+    "reason_code is a stable, machine-readable identifier; reason is a human-readable explanation.",
+    "Default discipline is fail-closed: silence is non-authorization, and ambiguity resolves to denied.",
+    "A denial or error is a complete, contracted response — not an exception to the contract."
+  ]
+}
