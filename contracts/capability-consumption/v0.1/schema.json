@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/capability-consumption/v0.1/schema.json",
+  "title": "Capability Consumption Contract (v0.1)",
+  "description": "Public-safe baseline schema for a capability-use request and its accepted/denied response. Constrains structure, types, and public enums only; capability naming, scope internals, and provisioning are intentionally not constrained.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["contract_family", "contract_version", "request"],
+  "properties": {
+    "contract_family": { "const": "capability-consumption" },
+    "contract_version": { "const": "v0.1" },
+    "example_id": { "type": "string" },
+    "description": { "type": "string" },
+    "request": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["consumer_ref", "request_type", "capability"],
+      "properties": {
+        "consumer_ref": { "type": "string" },
+        "request_type": { "const": "capability-use" },
+        "capability": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["name"],
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" }
+          }
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "consumer_instance": { "type": "string" },
+            "usage_window": { "type": "string" },
+            "note": { "type": "string" }
+          }
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "submitted_at": { "type": "string" }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["outcome"],
+      "properties": {
+        "outcome": { "type": "string", "enum": ["accepted", "denied"] },
+        "result_ref": { "type": "string" },
+        "received_at": { "type": "string" }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

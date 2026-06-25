@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/status-result/v0.1/schema.json",
+  "title": "Status / Result Contract (v0.1)",
+  "description": "Public-safe baseline schema for a status query and its result. Constrains structure, types, and public state enums only; the verification value and result reference formats are intentionally left opaque.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["contract_family", "contract_version"],
+  "properties": {
+    "contract_family": { "const": "status-result" },
+    "contract_version": { "const": "v0.1" },
+    "example_id": { "type": "string" },
+    "description": { "type": "string" },
+    "query": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["consumer_ref", "result_ref"],
+      "properties": {
+        "consumer_ref": { "type": "string" },
+        "result_ref": { "type": "string" },
+        "requested_at": { "type": "string" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["state"],
+      "properties": {
+        "state": { "type": "string", "enum": ["pending", "completed", "denied", "failed"] },
+        "result_ref": { "type": "string" },
+        "verification": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "scheme": { "type": "string" },
+            "value": { "type": "string" },
+            "note": { "type": "string" }
+          }
+        },
+        "completed_at": { "type": "string" }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
