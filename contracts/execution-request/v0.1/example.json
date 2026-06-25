@@ -1,0 +1,28 @@
+{
+  "contract_family": "execution-request",
+  "contract_version": "v0.1",
+  "example_id": "execution-request-example-001",
+  "description": "A consumer submits a structured execution request and receives an accepted outcome with a verifiable result reference. Field values below are placeholders for illustration only.",
+  "request": {
+    "consumer_ref": "consumer-placeholder",
+    "request_type": "execution",
+    "idempotency_key": "<unique-request-key>",
+    "submitted_at": "<iso-8601-timestamp>",
+    "payload": {
+      "operation": "process",
+      "input": {
+        "note": "Structured business input defined by the agreed contract for this operation. Shape is operation-specific and out of scope for this example."
+      }
+    }
+  },
+  "response": {
+    "outcome": "accepted",
+    "result_ref": "<result-reference>",
+    "received_at": "<iso-8601-timestamp>"
+  },
+  "notes": [
+    "outcome is one of: accepted | denied. A denied outcome follows the error-denial contract.",
+    "result_ref is an opaque, verifiable reference to the outcome; it is retrieved via the status-result contract.",
+    "Acceptance of a request does not by itself imply execution authority or completion."
+  ]
+}

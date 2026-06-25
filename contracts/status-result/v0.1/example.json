@@ -1,0 +1,27 @@
+{
+  "contract_family": "status-result",
+  "contract_version": "v0.1",
+  "example_id": "status-result-example-001",
+  "description": "A consumer queries a prior request by its result reference and receives the final state plus a verifiable result reference. Field values below are placeholders for illustration only.",
+  "query": {
+    "consumer_ref": "consumer-placeholder",
+    "result_ref": "<result-reference>",
+    "requested_at": "<iso-8601-timestamp>"
+  },
+  "result": {
+    "state": "completed",
+    "result_ref": "<result-reference>",
+    "verification": {
+      "scheme": "reference-digest",
+      "value": "<verification-value>",
+      "note": "A consumer may verify that a returned result corresponds to its reference. The verification value is an opaque, tamper-evident token. Its internal derivation is out of scope for this public contract."
+    },
+    "completed_at": "<iso-8601-timestamp>"
+  },
+  "notes": [
+    "state is one of: pending | completed | denied | failed.",
+    "A denied or failed state is described by the error-denial contract.",
+    "verification lets a consumer confirm result integrity without access to any internal system.",
+    "Receiving a result reference does not grant any further capability or access."
+  ]
+}

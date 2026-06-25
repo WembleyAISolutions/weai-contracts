@@ -1,0 +1,34 @@
+{
+  "contract_family": "capability-consumption",
+  "contract_version": "v0.1",
+  "example_id": "capability-consumption-example-001",
+  "description": "A consumer requests use of a named capability under an agreed scope and receives an accepted outcome with a verifiable result reference. Field values below are placeholders for illustration only.",
+  "request": {
+    "consumer_ref": "consumer-placeholder",
+    "request_type": "capability-use",
+    "capability": {
+      "name": "<capability-name>",
+      "version": "<capability-version>"
+    },
+    "scope": {
+      "consumer_instance": "<consumer-instance-ref>",
+      "usage_window": "<agreed-usage-window>",
+      "note": "Scope bounds what the consumer may invoke. The reach of a request is exactly its agreed scope and no broader."
+    },
+    "input": {
+      "note": "Capability-specific input defined by the agreed contract for the named capability. Shape is capability-specific and out of scope for this example."
+    },
+    "submitted_at": "<iso-8601-timestamp>"
+  },
+  "response": {
+    "outcome": "accepted",
+    "result_ref": "<result-reference>",
+    "received_at": "<iso-8601-timestamp>"
+  },
+  "notes": [
+    "outcome is one of: accepted | denied. A denied outcome follows the error-denial contract.",
+    "A consumer requests use of a capability by name and version; how that capability is produced or provisioned is out of scope for this public contract.",
+    "Holding a capability-use contract does not by itself grant entitlement; reach is bounded by the agreed scope.",
+    "result_ref is retrieved and verified via the status-result contract."
+  ]
+}
