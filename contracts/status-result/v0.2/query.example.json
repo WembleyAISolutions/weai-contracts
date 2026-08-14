@@ -1,0 +1,8 @@
+{
+  "contract_family": "status-result",
+  "contract_version": "v0.2",
+  "consumer_ref": "consumer-placeholder",
+  "result_ref": "result-placeholder-001",
+  "request_ref": "request-placeholder-001",
+  "requested_at": "2026-08-14T09:01:00Z"
+}

@@ -1,0 +1,18 @@
+{
+  "contract_family": "execution-request",
+  "contract_version": "v0.2",
+  "request_type": "execution",
+  "request_ref": "request-placeholder-001",
+  "operation_ref": "operation-placeholder-001",
+  "consumer_ref": "consumer-placeholder",
+  "actor_refs": [
+    ""
+  ],
+  "idempotency_key": "idempotency-placeholder-001",
+  "nonce": "nonce-placeholder-001",
+  "verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "0399fb682b8575e6f631e3e6172f4595b746473f15c8640dcaf699d150ca58a0"
+  }
+}

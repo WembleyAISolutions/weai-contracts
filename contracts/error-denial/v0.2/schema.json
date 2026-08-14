@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/error-denial/v0.2/schema.json",
+  "title": "Error / Denial — wire (v0.2)",
+  "description": "Public-safe denial or error wire object. reason_code is an open string; the published catalog documents generic public codes only and is not a closed enum. request_verification binds this object to the originating request when that request can be identified. verification is this object's self-integrity. A denial or error is a complete contracted response. It does not grant authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "contract_family",
+    "contract_version",
+    "outcome",
+    "reason_code",
+    "request_ref",
+    "request_verification",
+    "verification"
+  ],
+  "properties": {
+    "contract_family": {
+      "const": "error-denial"
+    },
+    "contract_version": {
+      "const": "v0.2"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["denied", "error"],
+      "description": "Contracted denial or error outcome."
+    },
+    "reason_code": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable machine-readable reason identifier. Public vocabulary is generic only; this field is not a closed enum."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Human-readable explanation. Not machine authority."
+    },
+    "request_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRef",
+      "description": "Request identity of the denied or failed request, when known."
+    },
+    "request_verification": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/requestVerification"
+    },
+    "verification": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/verification"
+    },
+    "occurred_at": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/timestamp"
+    }
+  }
+}

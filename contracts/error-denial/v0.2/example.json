@@ -1,0 +1,19 @@
+{
+  "contract_family": "error-denial",
+  "contract_version": "v0.2",
+  "outcome": "denied",
+  "reason_code": "not_permitted",
+  "reason": "The request is not permitted under the consumer's agreed contract scope.",
+  "request_ref": "request-placeholder-002",
+  "verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "2b778825e865c890abf889fafdc51f8174c2d8cb336d71d1b251fe80b0969f02"
+  },
+  "occurred_at": "2026-08-14T09:05:00Z",
+  "request_verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "085d2634b36a07e9464e80fe3720f2351eaec24e284697e98fa71ae45ca4a3bf"
+  }
+}

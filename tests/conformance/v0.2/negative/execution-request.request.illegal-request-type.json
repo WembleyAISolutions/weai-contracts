@@ -1,0 +1,15 @@
+{
+  "contract_family": "execution-request",
+  "contract_version": "v0.2",
+  "request_type": "capability-use",
+  "request_ref": "request-placeholder-001",
+  "operation_ref": "operation-placeholder-001",
+  "consumer_ref": "consumer-placeholder",
+  "idempotency_key": "idempotency-placeholder-001",
+  "nonce": "nonce-placeholder-001",
+  "verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "29c1e91bb0c65e56bb9f6fb7e44d529b358eb10025700b0ccc1f4163a73c3006"
+  }
+}
