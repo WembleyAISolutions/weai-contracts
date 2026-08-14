@@ -1,0 +1,19 @@
+{
+  "contract_family": "error-denial",
+  "contract_version": "v0.2",
+  "outcome": "denied",
+  "reason_code": "replay_rejected",
+  "reason": "The nonce was reused with a different integrity binding and was rejected.",
+  "request_ref": "request-placeholder-005",
+  "verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "711cc59b3d7a6935f01d1cef5ff8bbb9df2e2c838347987729a4eb2d770b00b6"
+  },
+  "occurred_at": "2026-08-14T09:08:00Z",
+  "request_verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "6c346e2d4ed16aaa94c689ebbaaa44fe06468ee53d802dcd3b18e85ad4d6ceaa"
+  }
+}

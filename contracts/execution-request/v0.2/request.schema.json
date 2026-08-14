@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/execution-request/v0.2/request.schema.json",
+  "title": "Execution Request — request wire (v0.2)",
+  "description": "Public-safe request-only wire object for a governed execution. This object must not carry outcome, acceptance, denial, a result reference, or any decision result. consumer_ref is the submitting consumer or service identity and is not the complete actor model. payload is operation-specific input only and cannot override envelope reference or integrity fields. A valid shape does not grant authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "contract_family",
+    "contract_version",
+    "request_type",
+    "request_ref",
+    "operation_ref",
+    "consumer_ref",
+    "idempotency_key",
+    "nonce",
+    "verification"
+  ],
+  "properties": {
+    "contract_family": {
+      "const": "execution-request"
+    },
+    "contract_version": {
+      "const": "v0.2"
+    },
+    "request_type": {
+      "const": "execution"
+    },
+    "request_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRef",
+      "description": "Request identity for this governed operation."
+    },
+    "operation_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRef",
+      "description": "Operation identity. Opaque; naming and catalog are out of scope."
+    },
+    "consumer_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRef",
+      "description": "Submitting consumer or service identity. This is not the complete actor model."
+    },
+    "actor_refs": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRefArray",
+      "description": "Generic opaque acting identities. Independent of consumer_ref, authority_refs, evidence_refs, and resource_revision_refs."
+    },
+    "authority_refs": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRefArray",
+      "description": "Independent opaque authority references. Presence does not grant authority."
+    },
+    "evidence_refs": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRefArray",
+      "description": "Independent opaque evidence references. Multiple values may be bound to one request."
+    },
+    "resource_revision_refs": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRefArray",
+      "description": "Independent opaque resource-revision references."
+    },
+    "idempotency_key": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRef",
+      "description": "Consumer-supplied idempotency key. Same key plus the same integrity binding identifies the same request."
+    },
+    "nonce": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRef",
+      "description": "Replay-detection nonce. Reuse with a different integrity binding is not the same request."
+    },
+    "scope": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/scope"
+    },
+    "verification": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/verification"
+    },
+    "submitted_at": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/timestamp"
+    },
+    "payload": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/payload"
+    }
+  }
+}

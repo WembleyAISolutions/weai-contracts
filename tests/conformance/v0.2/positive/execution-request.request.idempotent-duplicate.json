@@ -1,0 +1,36 @@
+{
+  "contract_family": "execution-request",
+  "contract_version": "v0.2",
+  "request_type": "execution",
+  "request_ref": "request-placeholder-001",
+  "operation_ref": "operation-placeholder-001",
+  "consumer_ref": "consumer-placeholder",
+  "actor_refs": [
+    "actor-placeholder-001",
+    "actor-placeholder-002"
+  ],
+  "authority_refs": [
+    "authority-placeholder-001"
+  ],
+  "evidence_refs": [
+    "evidence-placeholder-001",
+    "evidence-placeholder-002"
+  ],
+  "resource_revision_refs": [
+    "resource-revision-placeholder-001"
+  ],
+  "idempotency_key": "idempotency-placeholder-001",
+  "nonce": "nonce-placeholder-001",
+  "scope": {
+    "note": "Reach is exactly the agreed scope and no broader."
+  },
+  "verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "628eddd7daa50c7cb7d30c8b41120e6f5e6accd6a5e9b8cc09fb93174999061e"
+  },
+  "submitted_at": "2026-08-14T09:00:00Z",
+  "payload": {
+    "note": "Structured business input defined by the agreed contract for this operation. Shape is operation-specific and out of scope for this example."
+  }
+}

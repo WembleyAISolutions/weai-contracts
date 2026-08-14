@@ -1,0 +1,248 @@
+{
+  "v0_1": [
+    {
+      "name": "v0.1 execution-request example validates against v0.1",
+      "schema": "contracts/execution-request/v0.1/schema.json",
+      "fixture": "contracts/execution-request/v0.1/example.json"
+    },
+    {
+      "name": "v0.1 status-result example validates against v0.1",
+      "schema": "contracts/status-result/v0.1/schema.json",
+      "fixture": "contracts/status-result/v0.1/example.json"
+    },
+    {
+      "name": "v0.1 error-denial example validates against v0.1",
+      "schema": "contracts/error-denial/v0.1/schema.json",
+      "fixture": "contracts/error-denial/v0.1/example.json"
+    },
+    {
+      "name": "v0.1 capability-consumption example validates against v0.1",
+      "schema": "contracts/capability-consumption/v0.1/schema.json",
+      "fixture": "contracts/capability-consumption/v0.1/example.json"
+    }
+  ],
+  "v0_2_positive": [
+    {
+      "name": "valid v0.2 execution request (published wire example)",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "contracts/execution-request/v0.2/request.example.json"
+    },
+    {
+      "name": "valid v0.2 execution request (minimal required fields)",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/positive/execution-request.request.minimal.json"
+    },
+    {
+      "name": "valid 64-character lowercase SHA-256 hex digest",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/positive/execution-request.request.minimal.json"
+    },
+    {
+      "name": "request with multiple actor_refs",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/positive/execution-request.request.multiple-actor-refs.json"
+    },
+    {
+      "name": "request with authority, evidence, and resource-revision refs",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/positive/execution-request.request.authority-evidence-revision-refs.json"
+    },
+    {
+      "name": "idempotent duplicate request (same key, nonce, integrity, request_ref)",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/positive/execution-request.request.idempotent-duplicate.json"
+    },
+    {
+      "name": "valid accepted response",
+      "schema": "contracts/execution-request/v0.2/response.schema.json",
+      "fixture": "contracts/execution-request/v0.2/response.accepted.example.json"
+    },
+    {
+      "name": "valid denied response",
+      "schema": "contracts/execution-request/v0.2/response.schema.json",
+      "fixture": "contracts/execution-request/v0.2/response.denied.example.json"
+    },
+    {
+      "name": "valid status-result query",
+      "schema": "contracts/status-result/v0.2/query.schema.json",
+      "fixture": "contracts/status-result/v0.2/query.example.json"
+    },
+    {
+      "name": "valid pending status result",
+      "schema": "contracts/status-result/v0.2/result.schema.json",
+      "fixture": "contracts/status-result/v0.2/result.pending.example.json"
+    },
+    {
+      "name": "valid completed status result",
+      "schema": "contracts/status-result/v0.2/result.schema.json",
+      "fixture": "contracts/status-result/v0.2/result.completed.example.json"
+    },
+    {
+      "name": "valid denied status result",
+      "schema": "contracts/status-result/v0.2/result.schema.json",
+      "fixture": "tests/conformance/v0.2/positive/status-result.result.denied.json"
+    },
+    {
+      "name": "generic error-denial not_permitted",
+      "schema": "contracts/error-denial/v0.2/schema.json",
+      "fixture": "contracts/error-denial/v0.2/example.json"
+    },
+    {
+      "name": "generic error-denial invalid_request",
+      "schema": "contracts/error-denial/v0.2/schema.json",
+      "fixture": "contracts/error-denial/v0.2/example.invalid-request.json"
+    },
+    {
+      "name": "generic error-denial ambiguous_request",
+      "schema": "contracts/error-denial/v0.2/schema.json",
+      "fixture": "contracts/error-denial/v0.2/example.ambiguous-request.json"
+    },
+    {
+      "name": "generic error-denial replay_rejected",
+      "schema": "contracts/error-denial/v0.2/schema.json",
+      "fixture": "contracts/error-denial/v0.2/example.replay-rejected.json"
+    },
+    {
+      "name": "generic error-denial idempotency_conflict",
+      "schema": "contracts/error-denial/v0.2/schema.json",
+      "fixture": "contracts/error-denial/v0.2/example.idempotency-conflict.json"
+    }
+  ],
+  "v0_2_negative": [
+    {
+      "name": "outcome on request",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.has-outcome.json"
+    },
+    {
+      "name": "result_ref on request",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.has-result-ref.json"
+    },
+    {
+      "name": "missing required request identity",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.missing-request-ref.json"
+    },
+    {
+      "name": "missing contract version",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.missing-contract-version.json"
+    },
+    {
+      "name": "missing idempotency key",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.missing-idempotency-key.json"
+    },
+    {
+      "name": "missing nonce where required",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.missing-nonce.json"
+    },
+    {
+      "name": "invalid contract family",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.invalid-contract-family.json"
+    },
+    {
+      "name": "invalid contract version",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.invalid-contract-version.json"
+    },
+    {
+      "name": "malformed actor_refs",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.malformed-actor-refs.json"
+    },
+    {
+      "name": "malformed authority_refs",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.malformed-authority-refs.json"
+    },
+    {
+      "name": "malformed evidence_refs",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.malformed-evidence-refs.json"
+    },
+    {
+      "name": "malformed resource_revision_refs",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.malformed-resource-revision-refs.json"
+    },
+    {
+      "name": "invalid integrity-binding shape (missing value)",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.invalid-integrity-missing-value.json"
+    },
+    {
+      "name": "invalid integrity-binding shape (missing canonicalization)",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.invalid-integrity-missing-canonicalization.json"
+    },
+    {
+      "name": "invalid integrity-binding shape (extra property)",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.invalid-integrity-extra-property.json"
+    },
+    {
+      "name": "digest value too short",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.digest-too-short.json"
+    },
+    {
+      "name": "digest value uppercase hex",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.digest-uppercase.json"
+    },
+    {
+      "name": "digest value non-hex",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.digest-non-hex.json"
+    },
+    {
+      "name": "payload overrides actor_refs",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.payload-overrides-actor-refs.json"
+    },
+    {
+      "name": "payload overrides verification",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.payload-overrides-verification.json"
+    },
+    {
+      "name": "payload overrides envelope refs and scope",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.payload-overrides-envelope-refs.json"
+    },
+    {
+      "name": "illegal request_type enum",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.request.illegal-request-type.json"
+    },
+    {
+      "name": "illegal response outcome enum",
+      "schema": "contracts/execution-request/v0.2/response.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.response.illegal-outcome.json"
+    },
+    {
+      "name": "accepted response missing result_ref",
+      "schema": "contracts/execution-request/v0.2/response.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/execution-request.response.accepted-missing-result-ref.json"
+    },
+    {
+      "name": "illegal status-result state enum",
+      "schema": "contracts/status-result/v0.2/result.schema.json",
+      "fixture": "tests/conformance/v0.2/negative/status-result.result.illegal-state.json"
+    },
+    {
+      "name": "illegal error-denial outcome enum",
+      "schema": "contracts/error-denial/v0.2/schema.json",
+      "fixture": "tests/conformance/v0.2/negative/error-denial.illegal-outcome.json"
+    },
+    {
+      "name": "v0.1 wrapper is not a v0.2 request wire object",
+      "schema": "contracts/execution-request/v0.2/request.schema.json",
+      "fixture": "contracts/execution-request/v0.1/example.json"
+    }
+  ]
+}

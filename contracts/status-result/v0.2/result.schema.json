@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/status-result/v0.2/result.schema.json",
+  "title": "Status / Result — result wire (v0.2)",
+  "description": "Public-safe result wire object for a prior execution request. request_verification binds this result to the originating request digest. verification is this result object's self-integrity. Neither grants authority. A denied or failed state may also be described by the error-denial family.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "contract_family",
+    "contract_version",
+    "result_ref",
+    "state",
+    "request_verification",
+    "verification"
+  ],
+  "properties": {
+    "contract_family": {
+      "const": "status-result"
+    },
+    "contract_version": {
+      "const": "v0.2"
+    },
+    "request_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRef",
+      "description": "Request identity of the bound execution request."
+    },
+    "result_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRef",
+      "description": "Opaque result identity."
+    },
+    "state": {
+      "type": "string",
+      "enum": ["pending", "completed", "denied", "failed"],
+      "description": "Public result state. completed does not grant further capability or access."
+    },
+    "request_verification": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/requestVerification"
+    },
+    "verification": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/verification"
+    },
+    "completed_at": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/timestamp"
+    }
+  }
+}

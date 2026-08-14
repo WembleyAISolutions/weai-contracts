@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json",
+  "title": "Public contract shared definitions (v0.2)",
+  "description": "Reusable public-safe definitions for v0.2 wire objects. These definitions constrain structure only. They do not grant authority, imply a decision, or specify private signing, trust, or admission implementation.",
+  "$defs": {
+    "opaqueRef": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Opaque public reference string. Format, resolution, and storage are out of scope for this public contract."
+    },
+    "opaqueRefArray": {
+      "type": "array",
+      "description": "Ordered collection of opaque public references. Duplicate values are not permitted.",
+      "items": {
+        "$ref": "#/$defs/opaqueRef"
+      },
+      "uniqueItems": true
+    },
+    "verification": {
+      "type": "object",
+      "description": "Self-integrity of this wire object. scheme plus canonicalization plus value bind the exact transmitted contents, excluding only verification.value. A matching digest means this object is unmodified. It does not mean authority, approval, or admission. Private keys, signatures, and trust implementation are out of scope.",
+      "additionalProperties": false,
+      "required": ["scheme", "canonicalization", "value"],
+      "properties": {
+        "scheme": {
+          "const": "sha-256",
+          "description": "Public digest scheme. sha-256 is an integrity hash, not a signature."
+        },
+        "canonicalization": {
+          "const": "rfc8785",
+          "description": "Public JSON canonicalization: RFC 8785 JSON Canonicalization Scheme (JCS)."
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex SHA-256 digest of the RFC 8785 canonical form of this wire object with verification.value omitted. Exactly 64 characters [0-9a-f]."
+        }
+      }
+    },
+    "requestVerification": {
+      "$ref": "#/$defs/verification",
+      "description": "Digest identity of the originating execution-request request. Binds this object to that request. It is not this object's self-integrity."
+    },
+    "scope": {
+      "type": "object",
+      "description": "Opaque agreed scope for a request. Reach is exactly the agreed scope and no broader. Additional properties are permitted so implementations may carry operation-specific bounds without this schema enumerating them.",
+      "additionalProperties": true,
+      "properties": {
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "timestamp": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Event timestamp. v0.1 left format unconstrained; v0.2 examples use ISO-8601."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Operation-specific input only. Payload cannot replace or override envelope actor_refs, authority_refs, evidence_refs, resource_revision_refs, scope, verification, or request_verification. Payload data does not become authority by being present.",
+      "additionalProperties": true,
+      "propertyNames": {
+        "not": {
+          "enum": [
+            "outcome",
+            "accepted",
+            "denied",
+            "result_ref",
+            "decision",
+            "actor_refs",
+            "authority_refs",
+            "evidence_refs",
+            "resource_revision_refs",
+            "scope",
+            "verification",
+            "request_verification"
+          ]
+        }
+      }
+    }
+  }
+}

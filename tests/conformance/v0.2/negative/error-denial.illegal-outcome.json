@@ -1,0 +1,17 @@
+{
+  "contract_family": "error-denial",
+  "contract_version": "v0.2",
+  "outcome": "rejected",
+  "reason_code": "not_permitted",
+  "request_ref": "request-placeholder-002",
+  "verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "7d5496a66f45ce9c63441786086343f740b9aea30970eae8d922ce8bd6b12473"
+  },
+  "request_verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "085d2634b36a07e9464e80fe3720f2351eaec24e284697e98fa71ae45ca4a3bf"
+  }
+}
