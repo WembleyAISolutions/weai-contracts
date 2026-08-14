@@ -1,0 +1,16 @@
+{
+  "contract_family": "execution-request",
+  "contract_version": "v0.2",
+  "request_ref": "request-placeholder-001",
+  "outcome": "accepted",
+  "verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "7ba6d2a8a0d4193a40449e44cb486646280fde004733c3733f24b470949fbd61"
+  },
+  "request_verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "628eddd7daa50c7cb7d30c8b41120e6f5e6accd6a5e9b8cc09fb93174999061e"
+  }
+}

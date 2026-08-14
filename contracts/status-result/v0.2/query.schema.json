@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/status-result/v0.2/query.schema.json",
+  "title": "Status / Result — query wire (v0.2)",
+  "description": "Public-safe query wire object for the outcome of a prior execution request. This object does not itself grant access or authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "contract_family",
+    "contract_version",
+    "consumer_ref",
+    "result_ref"
+  ],
+  "properties": {
+    "contract_family": {
+      "const": "status-result"
+    },
+    "contract_version": {
+      "const": "v0.2"
+    },
+    "consumer_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRef",
+      "description": "Submitting consumer or service identity for the query."
+    },
+    "result_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRef",
+      "description": "Opaque result identity being queried."
+    },
+    "request_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRef",
+      "description": "Optional request identity associated with the result."
+    },
+    "requested_at": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/timestamp"
+    }
+  }
+}

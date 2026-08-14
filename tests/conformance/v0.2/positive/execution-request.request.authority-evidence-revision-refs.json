@@ -1,0 +1,27 @@
+{
+  "contract_family": "execution-request",
+  "contract_version": "v0.2",
+  "request_type": "execution",
+  "request_ref": "request-placeholder-012",
+  "operation_ref": "operation-placeholder-012",
+  "consumer_ref": "consumer-placeholder",
+  "authority_refs": [
+    "authority-placeholder-a",
+    "authority-placeholder-b"
+  ],
+  "evidence_refs": [
+    "evidence-placeholder-a",
+    "evidence-placeholder-b"
+  ],
+  "resource_revision_refs": [
+    "resource-revision-placeholder-a",
+    "resource-revision-placeholder-b"
+  ],
+  "idempotency_key": "idempotency-placeholder-012",
+  "nonce": "nonce-placeholder-012",
+  "verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "873bf06b098fea7c9b0bf73ad0583b81c36e8d7b79130900f306aa5e25c094ea"
+  }
+}

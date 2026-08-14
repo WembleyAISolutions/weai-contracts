@@ -1,0 +1,16 @@
+{
+  "name": "weai-contracts",
+  "private": true,
+  "description": "Public contract schemas, vocabulary, and conformance tests.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/conformance/run.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "canonicalize": "4.0.0"
+  }
+}

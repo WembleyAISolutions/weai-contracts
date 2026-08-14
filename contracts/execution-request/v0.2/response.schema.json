@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/execution-request/v0.2/response.schema.json",
+  "title": "Execution Request — response wire (v0.2)",
+  "description": "Public-safe response wire object for an execution request. Carries intake accepted or denied only. Does not carry the original request payload. accepted means the contract request was accepted into its defined processing path; it does not mean a governance allow-decision, that authority was granted, or that execution is permitted. denied is an intake outcome on this wire; it is not a governance decision object. Denied outcomes may also be represented by the error-denial family.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "contract_family",
+    "contract_version",
+    "request_ref",
+    "outcome",
+    "request_verification",
+    "verification"
+  ],
+  "properties": {
+    "contract_family": {
+      "const": "execution-request"
+    },
+    "contract_version": {
+      "const": "v0.2"
+    },
+    "request_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRef",
+      "description": "Request identity of the bound execution request."
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["accepted", "denied"],
+      "description": "Intake outcome. accepted means the contract request was accepted into its defined processing path; it does not mean a governance allow-decision, that authority was granted, or that execution is permitted. denied is not a substitute for a governance decision object."
+    },
+    "result_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRef",
+      "description": "Opaque result identity. Required when outcome is accepted. Retrieved via the status-result family."
+    },
+    "request_verification": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/requestVerification"
+    },
+    "verification": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/verification"
+    },
+    "received_at": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/timestamp"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "accepted"
+          }
+        },
+        "required": ["outcome"]
+      },
+      "then": {
+        "required": ["result_ref"]
+      }
+    }
+  ]
+}

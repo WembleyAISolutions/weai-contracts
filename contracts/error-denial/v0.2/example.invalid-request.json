@@ -1,0 +1,19 @@
+{
+  "contract_family": "error-denial",
+  "contract_version": "v0.2",
+  "outcome": "error",
+  "reason_code": "invalid_request",
+  "reason": "The request did not conform to the agreed contract shape.",
+  "request_ref": "request-placeholder-003",
+  "verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "112a12fcbc32baa29d01a4dfb2f1353de1e957566d78b5a10a11d7e58ba5f137"
+  },
+  "occurred_at": "2026-08-14T09:06:00Z",
+  "request_verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "3f30bc9c523e50901832e680cdfad54f3960ca9811cda11f4c9f6250b8e26b8a"
+  }
+}

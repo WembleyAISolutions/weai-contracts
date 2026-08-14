@@ -1,0 +1,19 @@
+{
+  "contract_family": "error-denial",
+  "contract_version": "v0.2",
+  "outcome": "denied",
+  "reason_code": "idempotency_conflict",
+  "reason": "The idempotency key was reused with a different integrity binding and was rejected.",
+  "request_ref": "request-placeholder-006",
+  "verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "3e0e9681d68974c52484c15adf31d2a341aa865ca10b18dde40d93767e024d83"
+  },
+  "occurred_at": "2026-08-14T09:09:00Z",
+  "request_verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "135fe9b563b44111e5d9b62f7b432706042b8ba90ac6023662c465044a4b417b"
+  }
+}

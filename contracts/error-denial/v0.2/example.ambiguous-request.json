@@ -1,0 +1,19 @@
+{
+  "contract_family": "error-denial",
+  "contract_version": "v0.2",
+  "outcome": "denied",
+  "reason_code": "ambiguous_request",
+  "reason": "The request could not be resolved unambiguously and was denied by default.",
+  "request_ref": "request-placeholder-004",
+  "verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "4585e604a1cec83ccd298c7b4dbe18331e845620a313c56eb28fbfcd27544e10"
+  },
+  "occurred_at": "2026-08-14T09:07:00Z",
+  "request_verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "5ca48572f8391580940b82543182f095dd86a7ade3923775330f81bda0eec2af"
+  }
+}

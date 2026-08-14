@@ -1,0 +1,37 @@
+{
+  "catalog_id": "reason-codes-v0.2",
+  "contract_version": "v0.2",
+  "description": "Generic public reason-code vocabulary. This catalog is documentation for interoperable codes. The error-denial wire field reason_code remains an open string and is not a closed enum. Codes here are generic only.",
+  "notes": [
+    "A denial or error is a complete contracted response.",
+    "Default discipline is fail-closed: silence is non-authorization, and ambiguity resolves to denied.",
+    "Catalog membership does not grant authority."
+  ],
+  "codes": [
+    {
+      "code": "not_permitted",
+      "outcome_class": "denied",
+      "meaning": "The request is not permitted under the agreed contract scope."
+    },
+    {
+      "code": "invalid_request",
+      "outcome_class": "error",
+      "meaning": "The request did not conform to the agreed contract shape."
+    },
+    {
+      "code": "ambiguous_request",
+      "outcome_class": "denied",
+      "meaning": "The request could not be resolved unambiguously and was denied by default."
+    },
+    {
+      "code": "replay_rejected",
+      "outcome_class": "denied",
+      "meaning": "A nonce was reused with a different integrity binding and was rejected."
+    },
+    {
+      "code": "idempotency_conflict",
+      "outcome_class": "denied",
+      "meaning": "An idempotency key was reused with a different integrity binding and was rejected."
+    }
+  ]
+}
