@@ -244,5 +244,179 @@
       "schema": "contracts/execution-request/v0.2/request.schema.json",
       "fixture": "contracts/execution-request/v0.1/example.json"
     }
+  ],
+  "v1_0_positive": [
+    {
+      "name": "valid v1.0 professional authority evidence (active individual)",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/positive/professional-authority-evidence.active-individual.json"
+    },
+    {
+      "name": "valid v1.0 professional authority evidence (active organisation)",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/positive/professional-authority-evidence.active-organisation.json"
+    },
+    {
+      "name": "valid v1.0 inactive credential observation",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/positive/professional-authority-evidence.status-inactive.json"
+    },
+    {
+      "name": "valid v1.0 expired credential observation",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/positive/professional-authority-evidence.status-expired.json"
+    },
+    {
+      "name": "valid v1.0 suspended credential observation",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/positive/professional-authority-evidence.status-suspended.json"
+    },
+    {
+      "name": "valid v1.0 revoked credential observation",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/positive/professional-authority-evidence.status-revoked.json"
+    },
+    {
+      "name": "valid v1.0 unknown credential observation",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/positive/professional-authority-evidence.status-unknown.json"
+    },
+    {
+      "name": "valid v1.0 optional validity interval",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/positive/professional-authority-evidence.validity-interval.json"
+    },
+    {
+      "name": "valid v1.0 superseding evidence with a new credential revision",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/positive/professional-authority-evidence.superseding-new-revision.json"
+    },
+    {
+      "name": "valid v1.0 byte-identical replay duplicate",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/positive/professional-authority-evidence.replay-duplicate.json"
+    },
+    {
+      "name": "valid v1.0 multiple sorted unique reference arrays",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/positive/professional-authority-evidence.multi-refs-sorted.json"
+    },
+    {
+      "name": "valid v1.0 producer canonical vector",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/positive/professional-authority-evidence.producer-vector.json"
+    },
+    {
+      "name": "valid v1.0 consumer canonical vector",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/positive/professional-authority-evidence.consumer-vector.json"
+    }
+  ],
+  "v1_0_negative": [
+    {
+      "name": "wrong contract family",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.wrong-family.json"
+    },
+    {
+      "name": "wrong contract version",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.wrong-version.json"
+    },
+    {
+      "name": "wrong evidence type",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.wrong-evidence-type.json"
+    },
+    {
+      "name": "wrong subject kind",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.wrong-subject-kind.json"
+    },
+    {
+      "name": "unknown credential status",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.unknown-status.json"
+    },
+    {
+      "name": "empty opaque reference",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.empty-opaque-ref.json"
+    },
+    {
+      "name": "empty required reference array",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.empty-scope-refs.json"
+    },
+    {
+      "name": "duplicate reference-array item",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.duplicate-refs-item.json"
+    },
+    {
+      "name": "unknown additional top-level property",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.unknown-top-property.json"
+    },
+    {
+      "name": "unknown additional nested property",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.unknown-nested-property.json"
+    },
+    {
+      "name": "timestamp with numeric offset",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.timestamp-offset.json"
+    },
+    {
+      "name": "timestamp with invalid month 13",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.timestamp-invalid-month.json"
+    },
+    {
+      "name": "timestamp with invalid hour 24",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.timestamp-invalid-hour.json"
+    },
+    {
+      "name": "timestamp with invalid minute 60",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.timestamp-invalid-minute.json"
+    },
+    {
+      "name": "timestamp with invalid second 61",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.timestamp-invalid-second.json"
+    },
+    {
+      "name": "timestamp with leap-second 60",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.timestamp-leap-second.json"
+    },
+    {
+      "name": "timestamp with malformed trailing-dot fraction",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.timestamp-bad-fraction.json"
+    },
+    {
+      "name": "malformed integrity object missing value",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.malformed-integrity-missing-value.json"
+    },
+    {
+      "name": "digest value too short",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.digest-too-short.json"
+    },
+    {
+      "name": "digest value uppercase hex",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.digest-uppercase.json"
+    },
+    {
+      "name": "digest value non-hex",
+      "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+      "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.digest-non-hex.json"
+    }
   ]
 }

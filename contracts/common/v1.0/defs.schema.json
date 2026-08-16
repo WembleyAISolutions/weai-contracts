@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json",
+  "title": "Public contract shared definitions (v1.0)",
+  "description": "Reusable public-safe definitions for v1.0 wire objects. These definitions constrain structure only. They do not grant authority, imply a decision, or specify private signing, trust, or admission implementation.",
+  "$defs": {
+    "opaqueRef": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/opaqueRef"
+    },
+    "verification": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v0.2/defs.schema.json#/$defs/verification"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d+)?Z$",
+      "description": "RFC 3339 UTC, Z only; offsets forbidden; leap-second 60 excluded; calendar validity (impossible month/day combinations, non-leap-year February 29) is enforced by conformance tests because it is not regex-expressible."
+    },
+    "nonEmptyOpaqueRefArray": {
+      "type": "array",
+      "description": "Non-empty unique opaque-reference array. Ascending UTF-16 code-unit order REQUIRED on the wire, enforced by conformance tests.",
+      "items": {
+        "$ref": "#/$defs/opaqueRef"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    }
+  }
+}

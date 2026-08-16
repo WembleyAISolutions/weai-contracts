@@ -12,12 +12,13 @@ Public contract schemas and examples for third-party systems that exchange struc
 
 ## Contract families
 
-This repository defines public-safe contract shapes in four families:
+This repository defines public-safe contract shapes in five families:
 
 1. **Execution Request Contracts** — a consumer submits a structured request; the service returns an accepted/denied outcome with a verifiable result reference.
 2. **Capability Consumption Contracts** — a consumer requests use of a named capability under an agreed scope.
 3. **Status / Result Contracts** — a consumer queries or receives the outcome of a prior request: final state plus a verifiable result reference.
 4. **Error / Denial Contracts** — every request may be denied or fail; denial and error are first-class, contracted outcomes.
+5. **Professional Authority Evidence Contracts** — a professional portal or credential-record system publishes one immutable, integrity-bound observation of one professional credential revision; evidence is not authority, admission, or execution permission.
 
 v0.2 publishes executable wire objects for families 1, 3, and 4. Capability consumption remains at the frozen v0.1 baseline; no v0.2 of that family is published here.
 
@@ -54,6 +55,16 @@ On the execution-request **response**:
 `payload` on the request is operation-specific input only. It cannot replace or override envelope `actor_refs`, `authority_refs`, `evidence_refs`, `resource_revision_refs`, `scope`, `verification`, or `request_verification`. Payload data does not become authority by being present.
 
 Shared public definitions live in `contracts/common/v0.2/defs.schema.json`.
+
+## v1.0 wire objects
+
+v1.0 publishes Professional Authority Evidence as a standalone evidence wire object.
+
+| Family | Wire object | Schema |
+| --- | --- | --- |
+| professional-authority-evidence | evidence only | `contracts/professional-authority-evidence/v1.0/evidence.schema.json` |
+
+Shared public definitions for this family live in `contracts/common/v1.0/defs.schema.json`. Evidence is not authority, admission, or execution permission.
 
 ## Identity model (v0.2)
 
