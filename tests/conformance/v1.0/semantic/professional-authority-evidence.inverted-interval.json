@@ -1,0 +1,44 @@
+{
+  "contract_family": "professional-authority-evidence",
+  "contract_version": "v1.0",
+  "evidence_type": "professional_authority",
+  "evidence_ref": "evidence-placeholder-inverted-001",
+  "producer_ref": "producer-placeholder-001",
+  "subject_ref": "subject-placeholder-001",
+  "subject_kind": "individual",
+  "professional_domain_ref": "domain-placeholder-001",
+  "jurisdiction_ref": "jurisdiction-placeholder-001",
+  "credential": {
+    "credential_ref": "credential-placeholder-001",
+    "credential_revision_ref": "credential-revision-placeholder-001",
+    "credential_type_ref": "credential-type-placeholder-001",
+    "issuer_ref": "issuer-placeholder-001",
+    "status": "inactive",
+    "status_as_of": "2026-08-15T00:00:00Z",
+    "authority_scope_refs": [
+      "scope-placeholder-001"
+    ],
+    "valid_from": "2026-08-20T00:00:00Z",
+    "valid_until": "2026-08-10T00:00:00Z"
+  },
+  "credential_verification": {
+    "verification_state": "verified",
+    "verification_record_ref": "verification-record-placeholder-001",
+    "verification_record_revision_ref": "verification-revision-placeholder-001",
+    "verification_method_ref": "method-placeholder-001",
+    "verifier_ref": "verifier-placeholder-001",
+    "verified_at": "2026-08-15T00:01:00Z",
+    "evidence_refs": [
+      "source-evidence-placeholder-001"
+    ],
+    "resource_revision_refs": [
+      "resource-revision-placeholder-001"
+    ]
+  },
+  "issued_at": "2026-08-15T00:02:00Z",
+  "verification": {
+    "scheme": "sha-256",
+    "canonicalization": "rfc8785",
+    "value": "eba2325016bb7a85e9ba4eb98f2119d3707ae21c522e97c91bcb7c381de5de5c"
+  }
+}

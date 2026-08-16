@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/professional-authority-evidence/v1.0/evidence.schema.json",
+  "title": "Professional Authority Evidence — evidence wire (v1.0)",
+  "description": "Public-safe wire object for one immutable observation of one professional credential revision. This object is evidence only. It does not grant authority, approve work, admit an operation, create an engagement, or authorize execution. Evidence does not mean governance ALLOW or DENY. A valid shape does not grant authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "contract_family",
+    "contract_version",
+    "evidence_type",
+    "evidence_ref",
+    "producer_ref",
+    "subject_ref",
+    "subject_kind",
+    "professional_domain_ref",
+    "jurisdiction_ref",
+    "credential",
+    "credential_verification",
+    "issued_at",
+    "verification"
+  ],
+  "properties": {
+    "contract_family": {
+      "const": "professional-authority-evidence"
+    },
+    "contract_version": {
+      "const": "v1.0"
+    },
+    "evidence_type": {
+      "const": "professional_authority"
+    },
+    "evidence_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Immutable identity of this published evidence object."
+    },
+    "supersedes_evidence_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Immediate predecessor when this publication replaces prior evidence in the same credential lineage."
+    },
+    "producer_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Identity of the evidence-producing system or organisation."
+    },
+    "subject_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Individual or organisation described by the credential."
+    },
+    "subject_kind": {
+      "enum": ["individual", "organisation"],
+      "description": "Generic subject category only."
+    },
+    "professional_domain_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Profession or domain reference; vocabulary resolution is outside this contract."
+    },
+    "jurisdiction_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Jurisdiction to which the assertion applies. Presence does not grant authority."
+    },
+    "credential": {
+      "type": "object",
+      "description": "One credential and exactly one immutable credential revision. Status is a normalized observation. It is not a governance decision. Presence does not grant operation authority.",
+      "additionalProperties": false,
+      "unevaluatedProperties": false,
+      "required": [
+        "credential_ref",
+        "credential_revision_ref",
+        "credential_type_ref",
+        "issuer_ref",
+        "status",
+        "status_as_of",
+        "authority_scope_refs"
+      ],
+      "properties": {
+        "credential_ref": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef",
+          "description": "Stable credential lineage identity."
+        },
+        "credential_revision_ref": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef",
+          "description": "Exact immutable revision being asserted."
+        },
+        "credential_type_ref": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef",
+          "description": "Credential type without embedding a regulator-specific enum."
+        },
+        "issuer_ref": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef",
+          "description": "External issuer or authoritative source reference."
+        },
+        "status": {
+          "enum": ["active", "inactive", "expired", "suspended", "revoked", "unknown"],
+          "description": "Normalized observed credential status. It is not a governance decision."
+        },
+        "status_as_of": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/utcTimestamp",
+          "description": "Time at which status was observed to apply."
+        },
+        "valid_from": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/utcTimestamp",
+          "description": "Start of the credential-validity interval when known."
+        },
+        "valid_until": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/utcTimestamp",
+          "description": "End of the credential-validity interval when known."
+        },
+        "authority_scope_refs": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/nonEmptyOpaqueRefArray",
+          "description": "Producer-observed professional scopes. Presence does not grant operation authority."
+        }
+      }
+    },
+    "credential_verification": {
+      "type": "object",
+      "description": "One immutable verification-record revision and its supporting references. verification_state verified means the producer completed its declared verification process for this record revision. This is not operation approval.",
+      "additionalProperties": false,
+      "unevaluatedProperties": false,
+      "required": [
+        "verification_state",
+        "verification_record_ref",
+        "verification_record_revision_ref",
+        "verification_method_ref",
+        "verifier_ref",
+        "verified_at",
+        "evidence_refs",
+        "resource_revision_refs"
+      ],
+      "properties": {
+        "verification_state": {
+          "const": "verified",
+          "description": "The producer completed its declared verification process for this record revision. This is not operation approval."
+        },
+        "verification_record_ref": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef",
+          "description": "Stable verification-record lineage identity."
+        },
+        "verification_record_revision_ref": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef",
+          "description": "Exact immutable verification-record revision."
+        },
+        "verification_method_ref": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef",
+          "description": "Method reference; public vocabulary and resolution remain out of scope."
+        },
+        "verifier_ref": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef",
+          "description": "Human, service, or organisation that performed the recorded verification."
+        },
+        "verified_at": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/utcTimestamp",
+          "description": "Time the producer completed verification."
+        },
+        "evidence_refs": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/nonEmptyOpaqueRefArray",
+          "description": "Source observations or evidence records supporting verification."
+        },
+        "resource_revision_refs": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/nonEmptyOpaqueRefArray",
+          "description": "Immutable locked attachment, snapshot, or source-resource revisions."
+        }
+      }
+    },
+    "issued_at": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/utcTimestamp",
+      "description": "Time this immutable evidence object was published."
+    },
+    "verification": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/verification"
+    }
+  }
+}
