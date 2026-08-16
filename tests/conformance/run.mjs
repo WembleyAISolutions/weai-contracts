@@ -8,6 +8,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import {
   CANONICALIZATION,
   DIGEST_SCHEME,
+  digestInput,
   rfc8785,
   sameVerification,
   selfDigest,
@@ -78,6 +79,7 @@ function createAjv() {
     strictRequired: false,
   });
   ajv.addSchema(loadJson("contracts/common/v0.2/defs.schema.json"));
+  ajv.addSchema(loadJson("contracts/common/v1.0/defs.schema.json"));
   return ajv;
 }
 
@@ -482,6 +484,7 @@ test("published contract families stay within the admitted public set", () => {
     "common",
     "error-denial",
     "execution-request",
+    "professional-authority-evidence",
     "status-result",
   ]);
   const families = readdirSync(join(repoRoot, "contracts")).filter((name) =>
@@ -499,6 +502,9 @@ test("public fixtures and v0.2 docs have no private or product names", () => {
     "contracts/execution-request/v0.2",
     "contracts/status-result/v0.2",
     "contracts/error-denial/v0.2",
+    "contracts/professional-authority-evidence/v1.0",
+    "contracts/common/v1.0",
+    "tests/conformance/v1.0",
     "tests/conformance/v0.2",
     "vocab",
     "semantics",
@@ -540,4 +546,673 @@ test("v0.1 published files remain the frozen baseline", () => {
     const schema = loadJson(rel);
     assert.equal(schema.properties.contract_version.const, "v0.1");
   }
+});
+
+const V1_EVIDENCE_SCHEMA =
+  "contracts/professional-authority-evidence/v1.0/evidence.schema.json";
+const V1_EXAMPLE =
+  "contracts/professional-authority-evidence/v1.0/evidence.example.json";
+const UTC_TIMESTAMP_PATTERN =
+  /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(\.\d+)?Z$/;
+
+function isLeapYear(year) {
+  return year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
+}
+
+function monthLength(year, month) {
+  if (month === 2) {
+    return isLeapYear(year) ? 29 : 28;
+  }
+  if (month === 4 || month === 6 || month === 9 || month === 11) {
+    return 30;
+  }
+  return 31;
+}
+
+function parseUtc(ts) {
+  if (typeof ts !== "string") {
+    return null;
+  }
+  const match = UTC_TIMESTAMP_PATTERN.exec(ts);
+  if (!match) {
+    return null;
+  }
+  const year = match[1];
+  const month = match[2];
+  const day = match[3];
+  const hour = match[4];
+  const minute = match[5];
+  const second = match[6];
+  const fraction = match[7] === undefined ? "" : match[7].slice(1);
+  const yearNum = Number(year);
+  const monthNum = Number(month);
+  const dayNum = Number(day);
+  if (dayNum > monthLength(yearNum, monthNum)) {
+    return null;
+  }
+  return { year, month, day, hour, minute, second, fraction };
+}
+
+function compareUtc(a, b) {
+  const left = parseUtc(a);
+  const right = parseUtc(b);
+  if (left === null || right === null) {
+    throw new Error("compareUtc requires calendar-valid UTC timestamps");
+  }
+  const leftParts = [left.year, left.month, left.day, left.hour, left.minute, left.second];
+  const rightParts = [right.year, right.month, right.day, right.hour, right.minute, right.second];
+  for (let i = 0; i < leftParts.length; i += 1) {
+    if (leftParts[i] < rightParts[i]) {
+      return -1;
+    }
+    if (leftParts[i] > rightParts[i]) {
+      return 1;
+    }
+  }
+  const width = Math.max(left.fraction.length, right.fraction.length);
+  const leftFraction = left.fraction.padEnd(width, "0");
+  const rightFraction = right.fraction.padEnd(width, "0");
+  if (leftFraction < rightFraction) {
+    return -1;
+  }
+  if (leftFraction > rightFraction) {
+    return 1;
+  }
+  return 0;
+}
+
+function v1PositivePath(name) {
+  return `tests/conformance/v1.0/positive/professional-authority-evidence.${name}.json`;
+}
+
+function v1SemanticPath(name) {
+  return `tests/conformance/v1.0/semantic/professional-authority-evidence.${name}.json`;
+}
+
+function v1PositiveFiles() {
+  return listFiles("tests/conformance/v1.0/positive")
+    .filter((rel) => rel.endsWith(".json"))
+    .sort();
+}
+
+function bindDigest(obj) {
+  const bound = structuredClone(obj);
+  bound.verification.value = selfDigest(bound);
+  return bound;
+}
+
+function refArrays(obj, acc = []) {
+  if (obj === null || typeof obj !== "object") {
+    return acc;
+  }
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      refArrays(item, acc);
+    }
+    return acc;
+  }
+  for (const [key, value] of Object.entries(obj)) {
+    if (key.endsWith("_refs") && Array.isArray(value)) {
+      acc.push(value);
+    } else {
+      refArrays(value, acc);
+    }
+  }
+  return acc;
+}
+
+function timestampsOf(obj) {
+  return [
+    obj.credential?.status_as_of,
+    obj.credential?.valid_from,
+    obj.credential?.valid_until,
+    obj.credential_verification?.verified_at,
+    obj.issued_at,
+  ].filter((value) => value !== undefined);
+}
+
+function assertV1SchemaAndDigest(obj, label) {
+  const validate = validatorFor(V1_EVIDENCE_SCHEMA);
+  assert.equal(validate(obj), true, `${label} schema: ${formatErrors(validate)}`);
+  assert.equal(selfDigest(obj), obj.verification.value, `${label} digest`);
+}
+
+function calendarValid(obj) {
+  return timestampsOf(obj).every((ts) => parseUtc(ts) !== null);
+}
+
+function refsSorted(obj) {
+  return refArrays(obj).every((arr) => {
+    const sorted = [...arr].sort();
+    return arr.length === sorted.length && arr.every((item, i) => item === sorted[i]);
+  });
+}
+
+function temporalInvariantsHold(obj) {
+  if (compareUtc(obj.credential.status_as_of, obj.credential_verification.verified_at) > 0) {
+    return false;
+  }
+  if (compareUtc(obj.credential_verification.verified_at, obj.issued_at) > 0) {
+    return false;
+  }
+  if (obj.credential.valid_from !== undefined && obj.credential.valid_until !== undefined) {
+    if (compareUtc(obj.credential.valid_from, obj.credential.valid_until) > 0) {
+      return false;
+    }
+  }
+  if (obj.credential.status === "active") {
+    if (
+      obj.credential.valid_from !== undefined &&
+      compareUtc(obj.credential.valid_from, obj.credential.status_as_of) > 0
+    ) {
+      return false;
+    }
+    if (
+      obj.credential.valid_until !== undefined &&
+      compareUtc(obj.credential.status_as_of, obj.credential.valid_until) > 0
+    ) {
+      return false;
+    }
+  }
+  if (obj.credential.status === "expired") {
+    if (obj.credential.valid_until === undefined) {
+      return false;
+    }
+    if (compareUtc(obj.credential.valid_until, obj.credential.status_as_of) > 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function sameLineage(a, b) {
+  return (
+    a.producer_ref === b.producer_ref &&
+    a.credential.credential_ref === b.credential.credential_ref
+  );
+}
+
+function credentialControlledFacts(obj) {
+  return {
+    credential_type_ref: obj.credential.credential_type_ref,
+    issuer_ref: obj.credential.issuer_ref,
+    status: obj.credential.status,
+    status_as_of: obj.credential.status_as_of,
+    valid_from: obj.credential.valid_from,
+    valid_until: obj.credential.valid_until,
+    authority_scope_refs: obj.credential.authority_scope_refs,
+  };
+}
+
+function verificationControlledFacts(obj) {
+  return {
+    verification_method_ref: obj.credential_verification.verification_method_ref,
+    verifier_ref: obj.credential_verification.verifier_ref,
+    verified_at: obj.credential_verification.verified_at,
+    evidence_refs: obj.credential_verification.evidence_refs,
+    resource_revision_refs: obj.credential_verification.resource_revision_refs,
+  };
+}
+
+function credentialFactsEqual(a, b) {
+  return JSON.stringify(credentialControlledFacts(a)) === JSON.stringify(credentialControlledFacts(b));
+}
+
+function verificationFactsEqual(a, b) {
+  return (
+    JSON.stringify(verificationControlledFacts(a)) === JSON.stringify(verificationControlledFacts(b))
+  );
+}
+
+function credentialRevisionCoherent(predecessor, successor) {
+  if (credentialFactsEqual(predecessor, successor)) {
+    return true;
+  }
+  return (
+    successor.credential.credential_revision_ref !== predecessor.credential.credential_revision_ref
+  );
+}
+
+function verificationRevisionCoherent(predecessor, successor) {
+  if (verificationFactsEqual(predecessor, successor)) {
+    return true;
+  }
+  return (
+    successor.credential_verification.verification_record_revision_ref !==
+    predecessor.credential_verification.verification_record_revision_ref
+  );
+}
+
+function deleteAtPath(obj, path) {
+  const parts = path.split(".");
+  let target = obj;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    target = target[parts[i]];
+  }
+  delete target[parts[parts.length - 1]];
+}
+
+function successorShell(predecessor) {
+  const next = structuredClone(predecessor);
+  next.evidence_ref = "evidence-placeholder-successor";
+  next.supersedes_evidence_ref = predecessor.evidence_ref;
+  return next;
+}
+
+test("v1.0 positive wire fixtures validate", async (t) => {
+  for (const item of manifest.v1_0_positive) {
+    await t.test(item.name, () => {
+      const validate = validatorFor(item.schema);
+      const fixture = loadJson(item.fixture);
+      assert.equal(
+        Object.hasOwn(fixture, "example_id"),
+        false,
+        "v1.0 wire fixtures must not be documentation wrappers",
+      );
+      assert.equal(
+        Object.hasOwn(fixture, "notes"),
+        false,
+        "v1.0 wire fixtures must not be documentation wrappers",
+      );
+      assert.equal(validate(fixture), true, formatErrors(validate));
+    });
+  }
+});
+
+test("v1.0 negative wire fixtures are rejected", async (t) => {
+  for (const item of manifest.v1_0_negative) {
+    await t.test(item.name, () => {
+      const validate = validatorFor(item.schema);
+      const fixture = loadJson(item.fixture);
+      assert.equal(
+        validate(fixture),
+        false,
+        `${item.fixture} unexpectedly validated`,
+      );
+    });
+  }
+});
+
+test("S1 v1.0 positive fixtures and example recompute self-digest", () => {
+  const files = [V1_EXAMPLE, ...v1PositiveFiles()];
+  assert.equal(v1PositiveFiles().length, 13);
+  for (const rel of files) {
+    const obj = loadJson(rel);
+    assert.equal(obj.verification.scheme, DIGEST_SCHEME);
+    assert.equal(obj.verification.canonicalization, CANONICALIZATION);
+    assert.match(obj.verification.value, /^[0-9a-f]{64}$/);
+    assert.equal(selfDigest(obj), obj.verification.value, rel);
+  }
+});
+
+test("S2 v1.0 field tampering changes the digest", () => {
+  const original = loadJson(V1_EXAMPLE);
+  const tampered = structuredClone(original);
+  tampered.subject_ref = "subject-placeholder-tampered";
+  assert.notEqual(selfDigest(tampered), original.verification.value);
+  assert.notEqual(selfDigest(tampered), selfDigest(original));
+});
+
+test("S3 v1.0 positive _refs arrays are strictly ascending UTF-16", () => {
+  for (const rel of v1PositiveFiles()) {
+    const obj = loadJson(rel);
+    for (const arr of refArrays(obj)) {
+      assert.deepEqual(arr, [...arr].sort(), rel);
+    }
+  }
+});
+
+test("S4 v1.0 temporal invariant negatives", async (t) => {
+  const cases = [
+    ["status-after-verified", (obj) => compareUtc(obj.credential.status_as_of, obj.credential_verification.verified_at) > 0],
+    ["verified-after-issued", (obj) => compareUtc(obj.credential_verification.verified_at, obj.issued_at) > 0],
+    ["inverted-interval", (obj) => compareUtc(obj.credential.valid_from, obj.credential.valid_until) > 0],
+    ["active-before-valid-from", (obj) => obj.credential.status === "active" && compareUtc(obj.credential.valid_from, obj.credential.status_as_of) > 0],
+    ["active-after-valid-until", (obj) => obj.credential.status === "active" && compareUtc(obj.credential.status_as_of, obj.credential.valid_until) > 0],
+    ["expired-missing-valid-until", (obj) => obj.credential.status === "expired" && obj.credential.valid_until === undefined],
+    ["expired-future-valid-until", (obj) => obj.credential.status === "expired" && compareUtc(obj.credential.valid_until, obj.credential.status_as_of) > 0],
+  ];
+  for (const [name, fails] of cases) {
+    await t.test(name, () => {
+      const obj = loadJson(v1SemanticPath(name));
+      assertV1SchemaAndDigest(obj, name);
+      assert.equal(fails(obj), true, `${name} did not fail the intended temporal rule`);
+      assert.equal(temporalInvariantsHold(obj), false, `${name} unexpectedly satisfied temporal invariants`);
+    });
+  }
+});
+
+test("S5 v1.0 calendar validity negatives", async (t) => {
+  const cases = [
+    ["impossible-calendar-day", "2026-02-30T00:00:00Z"],
+    ["feb29-non-leap-year", "2026-02-29T00:00:00Z"],
+  ];
+  for (const [name, bad] of cases) {
+    await t.test(name, () => {
+      const obj = loadJson(v1SemanticPath(name));
+      const validate = validatorFor(V1_EVIDENCE_SCHEMA);
+      assert.equal(validate(obj), true, `${name} schema: ${formatErrors(validate)}`);
+      assert.equal(selfDigest(obj), obj.verification.value, `${name} digest`);
+      assert.equal(parseUtc(bad), null);
+      assert.equal(parseUtc(obj.credential.status_as_of), null);
+    });
+  }
+});
+
+test("S6 v1.0 supersession lineage, self-supersession, and cross-lineage", () => {
+  const predecessor = loadJson(v1PositivePath("active-individual"));
+  const successor = loadJson(v1PositivePath("superseding-new-revision"));
+  assertV1SchemaAndDigest(predecessor, "lineage predecessor");
+  assertV1SchemaAndDigest(successor, "lineage successor");
+  assert.equal(sameLineage(predecessor, successor), true);
+  assert.equal(successor.supersedes_evidence_ref, predecessor.evidence_ref);
+  assert.notEqual(successor.evidence_ref, predecessor.evidence_ref);
+  assert.notEqual(
+    successor.credential.credential_revision_ref,
+    predecessor.credential.credential_revision_ref,
+  );
+
+  const selfSupersession = loadJson(v1SemanticPath("self-supersession"));
+  assertV1SchemaAndDigest(selfSupersession, "self-supersession");
+  assert.equal(selfSupersession.supersedes_evidence_ref, selfSupersession.evidence_ref);
+
+  const cross = loadJson(v1SemanticPath("cross-lineage-supersession"));
+  assertV1SchemaAndDigest(cross, "cross-lineage");
+  assert.equal(cross.supersedes_evidence_ref, predecessor.evidence_ref);
+  assert.equal(sameLineage(predecessor, cross), false);
+});
+
+test("S7 v1.0 byte-identical replay pair", () => {
+  const originalPath = join(repoRoot, v1PositivePath("active-individual"));
+  const replayPath = join(repoRoot, v1PositivePath("replay-duplicate"));
+  assert.deepEqual(readFileSync(originalPath), readFileSync(replayPath));
+  const original = loadJson(v1PositivePath("active-individual"));
+  const replay = loadJson(v1PositivePath("replay-duplicate"));
+  assertV1SchemaAndDigest(original, "replay original");
+  assertV1SchemaAndDigest(replay, "replay duplicate");
+  assert.equal(rfc8785(digestInput(original)), rfc8785(digestInput(replay)));
+  assert.equal(selfDigest(original), selfDigest(replay));
+  assert.equal(original.verification.value, replay.verification.value);
+  assert.equal(original.evidence_ref, replay.evidence_ref);
+});
+
+test("S8 v1.0 same evidence_ref with different bytes is a conflict", () => {
+  const original = loadJson(v1PositivePath("active-individual"));
+  const conflict = loadJson(v1SemanticPath("conflict-same-ref-different-bytes"));
+  assertV1SchemaAndDigest(original, "conflict original");
+  assertV1SchemaAndDigest(conflict, "conflict other");
+  assert.equal(original.evidence_ref, conflict.evidence_ref);
+  assert.notEqual(rfc8785(original), rfc8785(conflict));
+  assert.notEqual(original.verification.value, conflict.verification.value);
+});
+
+test("S9 v1.0 new evidence_ref with unchanged revisions is an ambiguous duplicate", () => {
+  const original = loadJson(v1PositivePath("active-individual"));
+  const duplicate = loadJson(v1SemanticPath("ambiguous-duplicate-new-ref-same-revisions"));
+  assertV1SchemaAndDigest(original, "ambiguous original");
+  assertV1SchemaAndDigest(duplicate, "ambiguous duplicate");
+  assert.notEqual(original.evidence_ref, duplicate.evidence_ref);
+  assert.equal(original.credential.credential_ref, duplicate.credential.credential_ref);
+  assert.equal(
+    original.credential.credential_revision_ref,
+    duplicate.credential.credential_revision_ref,
+  );
+  assert.equal(
+    original.credential_verification.verification_record_ref,
+    duplicate.credential_verification.verification_record_ref,
+  );
+  assert.equal(
+    original.credential_verification.verification_record_revision_ref,
+    duplicate.credential_verification.verification_record_revision_ref,
+  );
+});
+
+test("S10 v1.0 missing-required matrix", async (t) => {
+  const requiredPaths = [
+    "contract_family",
+    "contract_version",
+    "evidence_type",
+    "evidence_ref",
+    "producer_ref",
+    "subject_ref",
+    "subject_kind",
+    "professional_domain_ref",
+    "jurisdiction_ref",
+    "credential",
+    "credential_verification",
+    "issued_at",
+    "verification",
+    "credential.credential_ref",
+    "credential.credential_revision_ref",
+    "credential.credential_type_ref",
+    "credential.issuer_ref",
+    "credential.status",
+    "credential.status_as_of",
+    "credential.authority_scope_refs",
+    "credential_verification.verification_state",
+    "credential_verification.verification_record_ref",
+    "credential_verification.verification_record_revision_ref",
+    "credential_verification.verification_method_ref",
+    "credential_verification.verifier_ref",
+    "credential_verification.verified_at",
+    "credential_verification.evidence_refs",
+    "credential_verification.resource_revision_refs",
+  ];
+  assert.equal(requiredPaths.length, 28);
+  const example = loadJson(V1_EXAMPLE);
+  const validate = validatorFor(V1_EVIDENCE_SCHEMA);
+  for (const path of requiredPaths) {
+    await t.test(`missing ${path}`, () => {
+      const clone = structuredClone(example);
+      deleteAtPath(clone, path);
+      assert.equal(validate(clone), false, `${path} unexpectedly remained valid`);
+    });
+  }
+});
+
+test("S11 v1.0 prohibited-field injection matrix", async (t) => {
+  const fields = [
+    "allow",
+    "deny",
+    "decision",
+    "outcome",
+    "customer_ref",
+    "payment",
+    "settlement",
+    "commission",
+    "attachment_content",
+    "session_token",
+  ];
+  const sites = ["", "credential", "credential_verification"];
+  const example = loadJson(V1_EXAMPLE);
+  const validate = validatorFor(V1_EVIDENCE_SCHEMA);
+  for (const field of fields) {
+    for (const site of sites) {
+      const label = site === "" ? `top-level ${field}` : `${site}.${field}`;
+      await t.test(label, () => {
+        const clone = structuredClone(example);
+        if (site === "") {
+          clone[field] = "not-admitted";
+        } else {
+          clone[site][field] = "not-admitted";
+        }
+        assert.equal(validate(clone), false, `${label} unexpectedly remained valid`);
+      });
+    }
+  }
+});
+
+test("S12 v1.0 producer/consumer canonical vector", () => {
+  const producerPath = join(repoRoot, v1PositivePath("producer-vector"));
+  const consumerPath = join(repoRoot, v1PositivePath("consumer-vector"));
+  assert.deepEqual(readFileSync(producerPath), readFileSync(consumerPath));
+  const producer = loadJson(v1PositivePath("producer-vector"));
+  const consumer = loadJson(v1PositivePath("consumer-vector"));
+  assertV1SchemaAndDigest(producer, "producer-vector");
+  assertV1SchemaAndDigest(consumer, "consumer-vector");
+  assert.equal(rfc8785(digestInput(producer)), rfc8785(digestInput(consumer)));
+  assert.equal(selfDigest(producer), selfDigest(consumer));
+  assert.equal(producer.verification.value, consumer.verification.value);
+});
+
+test("S13 v1.0 identical semantic input canonicalizes deterministically", () => {
+  const first = structuredClone(loadJson(V1_EXAMPLE));
+  const second = structuredClone(loadJson(V1_EXAMPLE));
+  assert.equal(rfc8785(digestInput(first)), rfc8785(digestInput(second)));
+  assert.equal(selfDigest(first), selfDigest(second));
+});
+
+test("S14-A v1.0 credential revision coherence", async (t) => {
+  const predecessor = loadJson(V1_EXAMPLE);
+  assertV1SchemaAndDigest(predecessor, "S14-A predecessor");
+  const mutations = [
+    ["credential_type_ref", (obj) => {
+      obj.credential.credential_type_ref = "credential-type-placeholder-002";
+    }],
+    ["issuer_ref", (obj) => {
+      obj.credential.issuer_ref = "issuer-placeholder-002";
+    }],
+    ["status", (obj) => {
+      obj.credential.status = "inactive";
+    }],
+    ["status_as_of", (obj) => {
+      obj.credential.status_as_of = "2026-08-14T23:59:59Z";
+    }],
+    ["valid_from", (obj) => {
+      obj.credential.valid_from = "2026-08-01T00:00:00Z";
+    }],
+    ["valid_until", (obj) => {
+      obj.credential.valid_until = "2027-08-15T00:00:00Z";
+    }],
+    ["authority_scope_refs", (obj) => {
+      obj.credential.authority_scope_refs = [
+        "scope-placeholder-001",
+        "scope-placeholder-002",
+      ];
+    }],
+  ];
+  for (const [fact, mutate] of mutations) {
+    await t.test(`${fact} unchanged credential_revision_ref is rejected`, () => {
+      const successor = successorShell(predecessor);
+      mutate(successor);
+      const bound = bindDigest(successor);
+      assertV1SchemaAndDigest(bound, `S14-A reject ${fact}`);
+      assert.equal(calendarValid(bound), true);
+      assert.equal(refsSorted(bound), true);
+      assert.equal(temporalInvariantsHold(bound), true);
+      assert.equal(
+        bound.credential.credential_revision_ref,
+        predecessor.credential.credential_revision_ref,
+      );
+      assert.equal(credentialRevisionCoherent(predecessor, bound), false);
+    });
+    await t.test(`${fact} with new credential_revision_ref is accepted`, () => {
+      const successor = successorShell(predecessor);
+      mutate(successor);
+      successor.credential.credential_revision_ref = "credential-revision-placeholder-002";
+      const bound = bindDigest(successor);
+      assertV1SchemaAndDigest(bound, `S14-A accept ${fact}`);
+      assert.equal(calendarValid(bound), true);
+      assert.equal(refsSorted(bound), true);
+      assert.equal(temporalInvariantsHold(bound), true);
+      assert.notEqual(bound.evidence_ref, predecessor.evidence_ref);
+      assert.equal(bound.supersedes_evidence_ref, predecessor.evidence_ref);
+      assert.notEqual(
+        bound.credential.credential_revision_ref,
+        predecessor.credential.credential_revision_ref,
+      );
+      assert.equal(credentialRevisionCoherent(predecessor, bound), true);
+    });
+  }
+});
+
+test("S14-B v1.0 verification revision coherence", async (t) => {
+  const predecessor = loadJson(V1_EXAMPLE);
+  assertV1SchemaAndDigest(predecessor, "S14-B predecessor");
+  const mutations = [
+    ["verification_method_ref", (obj) => {
+      obj.credential_verification.verification_method_ref = "method-placeholder-002";
+    }],
+    ["verifier_ref", (obj) => {
+      obj.credential_verification.verifier_ref = "verifier-placeholder-002";
+    }],
+    ["verified_at", (obj) => {
+      obj.credential_verification.verified_at = "2026-08-15T00:01:30Z";
+    }],
+    ["evidence_refs", (obj) => {
+      obj.credential_verification.evidence_refs = [
+        "source-evidence-placeholder-001",
+        "source-evidence-placeholder-002",
+      ];
+    }],
+    ["resource_revision_refs", (obj) => {
+      obj.credential_verification.resource_revision_refs = [
+        "resource-revision-placeholder-001",
+        "resource-revision-placeholder-002",
+      ];
+    }],
+  ];
+  for (const [fact, mutate] of mutations) {
+    await t.test(`${fact} unchanged verification_record_revision_ref is rejected`, () => {
+      const successor = successorShell(predecessor);
+      mutate(successor);
+      const bound = bindDigest(successor);
+      assertV1SchemaAndDigest(bound, `S14-B reject ${fact}`);
+      assert.equal(calendarValid(bound), true);
+      assert.equal(refsSorted(bound), true);
+      assert.equal(temporalInvariantsHold(bound), true);
+      assert.equal(
+        bound.credential_verification.verification_record_revision_ref,
+        predecessor.credential_verification.verification_record_revision_ref,
+      );
+      assert.equal(verificationRevisionCoherent(predecessor, bound), false);
+    });
+    await t.test(`${fact} with new verification_record_revision_ref is accepted`, () => {
+      const successor = successorShell(predecessor);
+      mutate(successor);
+      successor.credential_verification.verification_record_revision_ref =
+        "verification-revision-placeholder-002";
+      const bound = bindDigest(successor);
+      assertV1SchemaAndDigest(bound, `S14-B accept ${fact}`);
+      assert.equal(calendarValid(bound), true);
+      assert.equal(refsSorted(bound), true);
+      assert.equal(temporalInvariantsHold(bound), true);
+      assert.notEqual(bound.evidence_ref, predecessor.evidence_ref);
+      assert.equal(bound.supersedes_evidence_ref, predecessor.evidence_ref);
+      assert.notEqual(
+        bound.credential_verification.verification_record_revision_ref,
+        predecessor.credential_verification.verification_record_revision_ref,
+      );
+      assert.equal(verificationRevisionCoherent(predecessor, bound), true);
+    });
+  }
+});
+
+test("S14-C v1.0 missing supersession is rejected", () => {
+  const predecessor = loadJson(V1_EXAMPLE);
+  const successor = structuredClone(predecessor);
+  successor.evidence_ref = "evidence-placeholder-successor";
+  successor.credential.credential_revision_ref = "credential-revision-placeholder-002";
+  const bound = bindDigest(successor);
+  assertV1SchemaAndDigest(bound, "S14-C");
+  assert.equal(sameLineage(predecessor, bound), true);
+  assert.notEqual(bound.evidence_ref, predecessor.evidence_ref);
+  assert.notEqual(
+    bound.credential.credential_revision_ref,
+    predecessor.credential.credential_revision_ref,
+  );
+  assert.equal(Object.hasOwn(bound, "supersedes_evidence_ref"), false);
+});
+
+test("v1.0 integrity-mismatch is schema-valid and digest-invalid", () => {
+  const obj = loadJson(v1SemanticPath("integrity-mismatch"));
+  const validate = validatorFor(V1_EVIDENCE_SCHEMA);
+  assert.equal(validate(obj), true, formatErrors(validate));
+  assert.notEqual(selfDigest(obj), obj.verification.value);
+});
+
+test("v1.0 unsorted-refs is schema-valid, digest-valid, and not sorted", () => {
+  const obj = loadJson(v1SemanticPath("unsorted-refs"));
+  assertV1SchemaAndDigest(obj, "unsorted-refs");
+  assert.equal(refsSorted(obj), false);
 });
