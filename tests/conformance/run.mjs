@@ -783,6 +783,35 @@ function verificationRevisionCoherent(predecessor, successor) {
   );
 }
 
+function revisionRequiresSupersession(predecessor, successor) {
+  if (!sameLineage(predecessor, successor)) {
+    return false;
+  }
+  if (successor.evidence_ref === predecessor.evidence_ref) {
+    return false;
+  }
+  return (
+    successor.credential.credential_revision_ref !== predecessor.credential.credential_revision_ref ||
+    successor.credential_verification.verification_record_revision_ref !==
+      predecessor.credential_verification.verification_record_revision_ref
+  );
+}
+
+function supersessionCoherent(predecessor, successor) {
+  if (Object.hasOwn(successor, "supersedes_evidence_ref")) {
+    if (successor.supersedes_evidence_ref === successor.evidence_ref) {
+      return false;
+    }
+    if (successor.supersedes_evidence_ref === predecessor.evidence_ref) {
+      return sameLineage(predecessor, successor);
+    }
+  }
+  if (revisionRequiresSupersession(predecessor, successor)) {
+    return successor.supersedes_evidence_ref === predecessor.evidence_ref;
+  }
+  return true;
+}
+
 function deleteAtPath(obj, path) {
   const parts = path.split(".");
   let target = obj;
@@ -911,15 +940,18 @@ test("S6 v1.0 supersession lineage, self-supersession, and cross-lineage", () =>
     successor.credential.credential_revision_ref,
     predecessor.credential.credential_revision_ref,
   );
+  assert.equal(supersessionCoherent(predecessor, successor), true);
 
   const selfSupersession = loadJson(v1SemanticPath("self-supersession"));
   assertV1SchemaAndDigest(selfSupersession, "self-supersession");
   assert.equal(selfSupersession.supersedes_evidence_ref, selfSupersession.evidence_ref);
+  assert.equal(supersessionCoherent(selfSupersession, selfSupersession), false);
 
   const cross = loadJson(v1SemanticPath("cross-lineage-supersession"));
   assertV1SchemaAndDigest(cross, "cross-lineage");
   assert.equal(cross.supersedes_evidence_ref, predecessor.evidence_ref);
   assert.equal(sameLineage(predecessor, cross), false);
+  assert.equal(supersessionCoherent(predecessor, cross), false);
 });
 
 test("S7 v1.0 byte-identical replay pair", () => {
@@ -942,7 +974,11 @@ test("S8 v1.0 same evidence_ref with different bytes is a conflict", () => {
   assertV1SchemaAndDigest(original, "conflict original");
   assertV1SchemaAndDigest(conflict, "conflict other");
   assert.equal(original.evidence_ref, conflict.evidence_ref);
-  assert.notEqual(rfc8785(original), rfc8785(conflict));
+  const originalInput = digestInput(original);
+  const conflictInput = digestInput(conflict);
+  assert.equal(Object.hasOwn(originalInput.verification, "value"), false);
+  assert.equal(Object.hasOwn(conflictInput.verification, "value"), false);
+  assert.notEqual(rfc8785(originalInput), rfc8785(conflictInput));
   assert.notEqual(original.verification.value, conflict.verification.value);
 });
 
@@ -1195,6 +1231,9 @@ test("S14-C v1.0 missing supersession is rejected", () => {
   successor.credential.credential_revision_ref = "credential-revision-placeholder-002";
   const bound = bindDigest(successor);
   assertV1SchemaAndDigest(bound, "S14-C");
+  assert.equal(calendarValid(bound), true);
+  assert.equal(refsSorted(bound), true);
+  assert.equal(temporalInvariantsHold(bound), true);
   assert.equal(sameLineage(predecessor, bound), true);
   assert.notEqual(bound.evidence_ref, predecessor.evidence_ref);
   assert.notEqual(
@@ -1202,6 +1241,8 @@ test("S14-C v1.0 missing supersession is rejected", () => {
     predecessor.credential.credential_revision_ref,
   );
   assert.equal(Object.hasOwn(bound, "supersedes_evidence_ref"), false);
+  assert.equal(revisionRequiresSupersession(predecessor, bound), true);
+  assert.equal(supersessionCoherent(predecessor, bound), false);
 });
 
 test("v1.0 integrity-mismatch is schema-valid and digest-invalid", () => {
