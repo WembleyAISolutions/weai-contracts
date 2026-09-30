@@ -1,0 +1,10 @@
+{
+  "contract_family": "source-session-handoff",
+  "contract_version": "v1.0",
+  "profile": "oauth2-authorization-code-pkce-s256-v1",
+  "outcome": "malformed",
+  "retryable": false,
+  "correlation_ref": "correlation-placeholder-001",
+  "handoff_ref": "handoff-placeholder-001",
+  "occurred_at": "2026-08-15T00:00:10Z"
+}

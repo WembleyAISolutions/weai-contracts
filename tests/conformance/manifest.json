@@ -418,5 +418,291 @@
       "schema": "contracts/professional-authority-evidence/v1.0/evidence.schema.json",
       "fixture": "tests/conformance/v1.0/negative/professional-authority-evidence.digest-non-hex.json"
     }
+  ],
+  "source_session_handoff_v1_positive": [
+    {
+      "name": "valid v1.0 source session handoff initiation",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "contracts/source-session-handoff/v1.0/initiation.example.json"
+    },
+    {
+      "name": "valid v1.0 source session handoff authenticated context",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "contracts/source-session-handoff/v1.0/authenticated-context.example.json"
+    },
+    {
+      "name": "valid v1.0 source session handoff failure",
+      "schema": "contracts/source-session-handoff/v1.0/failure.schema.json",
+      "fixture": "contracts/source-session-handoff/v1.0/failure.example.json"
+    },
+    {
+      "name": "authenticated context multiple bounds",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/positive/authenticated-context.multiple-bounds.json"
+    },
+    {
+      "name": "authenticated context scope subset",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/positive/authenticated-context.scope-subset.json"
+    },
+    {
+      "name": "failure dependency unavailable",
+      "schema": "contracts/source-session-handoff/v1.0/failure.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/positive/failure.dependency-unavailable.json"
+    },
+    {
+      "name": "failure expired",
+      "schema": "contracts/source-session-handoff/v1.0/failure.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/positive/failure.expired.json"
+    },
+    {
+      "name": "failure identity not bound",
+      "schema": "contracts/source-session-handoff/v1.0/failure.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/positive/failure.identity-not-bound.json"
+    },
+    {
+      "name": "failure permission denied",
+      "schema": "contracts/source-session-handoff/v1.0/failure.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/positive/failure.permission-denied.json"
+    },
+    {
+      "name": "failure replayed",
+      "schema": "contracts/source-session-handoff/v1.0/failure.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/positive/failure.replayed.json"
+    },
+    {
+      "name": "failure scope invalid",
+      "schema": "contracts/source-session-handoff/v1.0/failure.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/positive/failure.scope-invalid.json"
+    },
+    {
+      "name": "failure unsupported version",
+      "schema": "contracts/source-session-handoff/v1.0/failure.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/positive/failure.unsupported-version.json"
+    },
+    {
+      "name": "failure unverified",
+      "schema": "contracts/source-session-handoff/v1.0/failure.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/positive/failure.unverified.json"
+    },
+    {
+      "name": "initiation multiple scopes",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/positive/initiation.multiple-scopes.json"
+    }
+  ],
+  "source_session_handoff_v1_negative": [
+    {
+      "name": "authenticated context duplicate scope",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/authenticated-context.duplicate-scope.json"
+    },
+    {
+      "name": "authenticated context empty scope",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/authenticated-context.empty-scope.json"
+    },
+    {
+      "name": "authenticated context missing subject ref",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/authenticated-context.missing-subject-ref.json"
+    },
+    {
+      "name": "authenticated context refresh token",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/authenticated-context.refresh-token.json"
+    },
+    {
+      "name": "authenticated context unknown property",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/authenticated-context.unknown-property.json"
+    },
+    {
+      "name": "authenticated context unsupported profile",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/authenticated-context.unsupported-profile.json"
+    },
+    {
+      "name": "authenticated context unsupported version",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/authenticated-context.unsupported-version.json"
+    },
+    {
+      "name": "authenticated context wildcard permission",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/authenticated-context.wildcard-permission.json"
+    },
+    {
+      "name": "authenticated context wildcard scope",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/authenticated-context.wildcard-scope.json"
+    },
+    {
+      "name": "failure retryable false for dependency",
+      "schema": "contracts/source-session-handoff/v1.0/failure.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/failure.retryable-false-for-dependency.json"
+    },
+    {
+      "name": "failure retryable true for malformed",
+      "schema": "contracts/source-session-handoff/v1.0/failure.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/failure.retryable-true-for-malformed.json"
+    },
+    {
+      "name": "failure unknown outcome",
+      "schema": "contracts/source-session-handoff/v1.0/failure.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/failure.unknown-outcome.json"
+    },
+    {
+      "name": "failure unknown property",
+      "schema": "contracts/source-session-handoff/v1.0/failure.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/failure.unknown-property.json"
+    },
+    {
+      "name": "initiation destination query",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/initiation.destination-query.json"
+    },
+    {
+      "name": "initiation destination wildcard",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/initiation.destination-wildcard.json"
+    },
+    {
+      "name": "initiation duplicate scope",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/initiation.duplicate-scope.json"
+    },
+    {
+      "name": "initiation empty scope",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/initiation.empty-scope.json"
+    },
+    {
+      "name": "initiation missing handoff ref",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/initiation.missing-handoff-ref.json"
+    },
+    {
+      "name": "initiation unknown property",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/initiation.unknown-property.json"
+    },
+    {
+      "name": "initiation unsupported family",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/initiation.unsupported-family.json"
+    },
+    {
+      "name": "initiation unsupported profile",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/initiation.unsupported-profile.json"
+    },
+    {
+      "name": "initiation unsupported version",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/initiation.unsupported-version.json"
+    },
+    {
+      "name": "initiation wildcard embedded",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/initiation.wildcard-embedded.json"
+    },
+    {
+      "name": "initiation wildcard scope",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/negative/initiation.wildcard-scope.json"
+    }
+  ],
+  "source_session_handoff_v1_semantic": [
+    {
+      "name": "authenticated context audience mismatch",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/authenticated-context.audience-mismatch.json"
+    },
+    {
+      "name": "authenticated context client mismatch",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/authenticated-context.client-mismatch.json"
+    },
+    {
+      "name": "authenticated context destination mismatch",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/authenticated-context.destination-mismatch.json"
+    },
+    {
+      "name": "authenticated context forged organisation",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/authenticated-context.forged-organisation.json"
+    },
+    {
+      "name": "authenticated context forged role",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/authenticated-context.forged-role.json"
+    },
+    {
+      "name": "authenticated context forged subject",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/authenticated-context.forged-subject.json"
+    },
+    {
+      "name": "authenticated context inverted lifetime",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/authenticated-context.inverted-lifetime.json"
+    },
+    {
+      "name": "authenticated context issued after code window",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/authenticated-context.issued-after-code-window.json"
+    },
+    {
+      "name": "authenticated context issuer mismatch",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/authenticated-context.issuer-mismatch.json"
+    },
+    {
+      "name": "authenticated context lifetime over 5m",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/authenticated-context.lifetime-over-5m.json"
+    },
+    {
+      "name": "authenticated context receiver mismatch",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/authenticated-context.receiver-mismatch.json"
+    },
+    {
+      "name": "authenticated context replay second session",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/authenticated-context.replay-second-session.json"
+    },
+    {
+      "name": "authenticated context same session and context ref",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/authenticated-context.same-session-and-context-ref.json"
+    },
+    {
+      "name": "authenticated context scope not subset",
+      "schema": "contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/authenticated-context.scope-not-subset.json"
+    },
+    {
+      "name": "initiation ambiguous scope",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/initiation.ambiguous-scope.json"
+    },
+    {
+      "name": "initiation inverted lifetime",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/initiation.inverted-lifetime.json"
+    },
+    {
+      "name": "initiation lifetime over 60s",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/initiation.lifetime-over-60s.json"
+    },
+    {
+      "name": "initiation unsorted scopes",
+      "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
+      "fixture": "tests/conformance/source-session-handoff/v1.0/semantic/initiation.unsorted-scopes.json"
+    }
   ]
 }
