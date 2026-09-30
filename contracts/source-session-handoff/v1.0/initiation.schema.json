@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/initiation.schema.json",
+  "title": "Source Session Handoff — initiation wire (v1.0)",
+  "description": "Public-safe initiation of one source-session handoff under profile oauth2-authorization-code-pkce-s256-v1. A valid initiation does not authenticate identity and does not grant permission, role, membership, runtime admission, or access. Browser-supplied copies of this object are not trusted.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "contract_family",
+    "contract_version",
+    "profile",
+    "handoff_ref",
+    "issuer",
+    "receiver_ref",
+    "client_ref",
+    "destination_uri",
+    "transaction_ref",
+    "nonce_ref",
+    "requested_record_scope_refs",
+    "initiated_at",
+    "expires_at",
+    "correlation_ref"
+  ],
+  "properties": {
+    "contract_family": {
+      "const": "source-session-handoff"
+    },
+    "contract_version": {
+      "const": "v1.0"
+    },
+    "profile": {
+      "const": "oauth2-authorization-code-pkce-s256-v1",
+      "description": "Selects the frozen OAuth 2.0 Authorization Code profile with PKCE S256 only."
+    },
+    "handoff_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Identity of this handoff attempt. Replay uses exact string equality."
+    },
+    "issuer": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Issuer identifier compared by exact string equality. This contract does not fetch issuer metadata."
+    },
+    "receiver_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Intended receiving party. Presence does not create a receiver role or permission."
+    },
+    "client_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Registered client binding for the receiving party. Presence does not grant access."
+    },
+    "destination_uri": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/destinationUri",
+      "description": "Exact registered redirect URI for this handoff."
+    },
+    "transaction_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Opaque browser-bound transaction correlation. The raw browser state value is not carried."
+    },
+    "nonce_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Opaque reference to the browser-bound nonce correlation. The raw nonce value is not carried."
+    },
+    "requested_record_scope_refs": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/boundedRefArray",
+      "description": "Record scopes requested for this handoff. Empty, duplicate, and wildcard values are forbidden. Presence does not grant receiver access."
+    },
+    "initiated_at": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/utcTimestamp",
+      "description": "Start of the authorization-code window."
+    },
+    "expires_at": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/utcTimestamp",
+      "description": "End of the authorization-code window. Conformance requires a strictly positive duration no greater than 60 seconds."
+    },
+    "correlation_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Correlation shared by the initiation, authenticated context, and failure for this attempt."
+    }
+  }
+}

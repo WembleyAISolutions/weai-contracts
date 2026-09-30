@@ -13,6 +13,7 @@ import {
   sameVerification,
   selfDigest,
 } from "./digest.mjs";
+import "./source-session-handoff-v1.0.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const manifest = JSON.parse(
@@ -80,6 +81,7 @@ function createAjv() {
   });
   ajv.addSchema(loadJson("contracts/common/v0.2/defs.schema.json"));
   ajv.addSchema(loadJson("contracts/common/v1.0/defs.schema.json"));
+  ajv.addSchema(loadJson("contracts/source-session-handoff/v1.0/defs.schema.json"));
   return ajv;
 }
 
@@ -485,6 +487,7 @@ test("published contract families stay within the admitted public set", () => {
     "error-denial",
     "execution-request",
     "professional-authority-evidence",
+    "source-session-handoff",
     "status-result",
   ]);
   const families = readdirSync(join(repoRoot, "contracts")).filter((name) =>
@@ -504,7 +507,10 @@ test("public fixtures and v0.2 docs have no private or product names", () => {
     "contracts/error-denial/v0.2",
     "contracts/professional-authority-evidence/v1.0",
     "contracts/common/v1.0",
+    "contracts/source-session-handoff",
     "tests/conformance/v1.0",
+    "tests/conformance/source-session-handoff",
+    "tests/conformance/source-session-handoff-v1.0.mjs",
     "tests/conformance/v0.2",
     "vocab",
     "semantics",
