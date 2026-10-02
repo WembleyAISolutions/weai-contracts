@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json",
+  "title": "Source Session Handoff shared definitions (v1.0)",
+  "description": "Reusable public-safe definitions for source-session-handoff v1.0 wire objects. These definitions constrain structure only. They do not authenticate identity and do not grant permission, role, membership, runtime admission, or access.",
+  "$defs": {
+    "opaqueRef": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef"
+    },
+    "utcTimestamp": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/utcTimestamp"
+    },
+    "boundedRef": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\s*]+$",
+      "description": "Opaque source-attested bound. The ASCII asterisk and whitespace are forbidden, so a wildcard cannot be expressed. Presence does not grant receiver access."
+    },
+    "boundedRefArray": {
+      "type": "array",
+      "description": "Non-empty unique bounds. Ascending UTF-16 code-unit order is required on the wire and enforced by conformance tests. Empty, duplicate, and wildcard values are forbidden.",
+      "items": {
+        "$ref": "#/$defs/boundedRef"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "destinationUri": {
+      "type": "string",
+      "minLength": 9,
+      "pattern": "^https://[^\\s?#*]+$",
+      "description": "Structural screen for an exact registered https destination: scheme https, no whitespace, query, fragment, or asterisk. A nonempty host, no user information, a well-formed port, and a well-formed IPv6 literal are semantic conformance requirements. Exact binding is string equality and is not URL canonicalization."
+    }
+  }
+}

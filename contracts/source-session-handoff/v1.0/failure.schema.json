@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/failure.schema.json",
+  "title": "Source Session Handoff — failure wire (v1.0)",
+  "description": "Public-safe closed failure for source-session-handoff v1.0. A valid failure does not authenticate identity, grant access, or carry diagnostic material. dependency_unavailable is retryable and must not be converted into success, an empty context, or an unscoped redirect.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "contract_family",
+    "contract_version",
+    "profile",
+    "outcome",
+    "retryable",
+    "correlation_ref",
+    "occurred_at"
+  ],
+  "properties": {
+    "contract_family": {
+      "const": "source-session-handoff"
+    },
+    "contract_version": {
+      "const": "v1.0"
+    },
+    "profile": {
+      "const": "oauth2-authorization-code-pkce-s256-v1",
+      "description": "Profile of the handoff attempt that failed. An unsupported peer profile is reported with outcome unsupported_version on this v1.0 failure object."
+    },
+    "outcome": {
+      "enum": [
+        "malformed",
+        "unverified",
+        "expired",
+        "replayed",
+        "identity_not_bound",
+        "scope_invalid",
+        "permission_denied",
+        "unsupported_version",
+        "dependency_unavailable"
+      ],
+      "description": "Closed initial outcome vocabulary. No other outcome is valid in v1.0."
+    },
+    "retryable": {
+      "type": "boolean",
+      "description": "True only for dependency_unavailable. Every other outcome is false."
+    },
+    "correlation_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Correlation for this failed attempt. Required even when handoff_ref is omitted."
+    },
+    "handoff_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Handoff attempt when one has already been assigned. Optional."
+    },
+    "occurred_at": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/utcTimestamp",
+      "description": "Time this failure was recorded. The pattern is the v1.0 UTC grammar. Calendar validity, including leap days and impossible month lengths, is a conformance requirement and a schema match alone is not conformance."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["outcome"],
+        "properties": {
+          "outcome": {
+            "const": "dependency_unavailable"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retryable": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["outcome"],
+        "properties": {
+          "outcome": {
+            "enum": [
+              "malformed",
+              "unverified",
+              "expired",
+              "replayed",
+              "identity_not_bound",
+              "scope_invalid",
+              "permission_denied",
+              "unsupported_version"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    }
+  ]
+}
