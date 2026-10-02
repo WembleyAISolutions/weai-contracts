@@ -29,7 +29,7 @@
       "type": "string",
       "minLength": 9,
       "pattern": "^https://[^\\s?#*]+$",
-      "description": "Exact registered https destination URI. Query, fragment, and asterisk are forbidden so this value cannot carry an identity, scope, code, verifier, or wildcard redirect."
+      "description": "Structural screen for an exact registered https destination: scheme https, no whitespace, query, fragment, or asterisk. A nonempty host, no user information, a well-formed port, and a well-formed IPv6 literal are semantic conformance requirements. Exact binding is string equality and is not URL canonicalization."
     }
   }
 }

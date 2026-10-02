@@ -54,6 +54,10 @@ Required fields: `contract_family`, `contract_version`, `profile`, `handoff_ref`
 
 `expires_at` MUST be strictly later than `initiated_at`, and the duration MUST be no greater than 60 seconds. That window is the authorization-code lifetime for the attempt.
 
+`initiated_at` and `expires_at` MUST each be a calendar-valid instant in the proleptic Gregorian calendar for years 0000 through 9999. Comparison uses the whole-second civil day count and the exact fractional digit string. It does not use a host date library, does not apply a 0–99 year offset, and does not truncate or round fractional seconds.
+
+`destination_uri` MUST satisfy the destination rules in section 4. The structural schema pattern is only a screen for the `https` scheme and the absence of whitespace, query, fragment, and asterisk. A nonempty host, the absence of user information, a well-formed port, and a well-formed IPv6 literal are semantic conformance requirements.
+
 ### 3.2 Authenticated context
 
 Required fields: `contract_family`, `contract_version`, `profile`, `handoff_ref`, `transaction_ref`, `issuer`, `audience`, `receiver_ref`, `client_ref`, `subject_ref`, `source_session_ref`, `source_context_ref`, `organisation_ref`, `account_ref`, `record_scope_refs`, `source_role_ref`, `source_permission_refs`, `destination_uri`, `issued_at`, `expires_at`, `correlation_ref`.
@@ -62,7 +66,7 @@ Required fields: `contract_family`, `contract_version`, `profile`, `handoff_ref`
 
 `record_scope_refs` and `source_permission_refs` use the same non-empty, unique, no-wildcard rule as initiation scopes. On the wire they MUST be sorted in ascending UTF-16 code-unit order.
 
-`expires_at` MUST be strictly later than `issued_at`, and the duration MUST be no greater than 5 minutes. No refresh token exists in v1.0.
+`expires_at` MUST be strictly later than `issued_at`, and the duration MUST be no greater than 5 minutes. No refresh token exists in v1.0. `issued_at` and `expires_at` use the same calendar-valid UTC instant rules as initiation timestamps. `destination_uri` uses the same destination rules as initiation.
 
 A bound pair with an initiation MUST satisfy all of the following by exact string equality:
 
@@ -82,7 +86,7 @@ Required fields: `contract_family`, `contract_version`, `profile`, `outcome`, `r
 
 `handoff_ref` is optional. `correlation_ref` remains required when no handoff reference has been assigned.
 
-`occurred_at` MUST be a calendar-valid UTC timestamp under the existing wire grammar. An impossible date, including 30 February and 29 February in a non-leap year, fails conformance even when the timestamp pattern matches.
+`occurred_at` MUST be a calendar-valid UTC timestamp under the existing wire grammar, using the same proleptic Gregorian instant rules as initiation and authenticated context. An impossible date, including 30 February and 29 February in a non-leap year, makes the failure object non-conformant even when the timestamp pattern matches. Schema acceptance of the failure object is not conformance.
 
 The object MUST NOT carry passwords, bearer tokens, authorization codes, PKCE verifiers, customer or order records, commercial amounts, signing secrets, diagnostic text, or membership and grant assertions. `additionalProperties: false` is the structural enforcement.
 
@@ -98,7 +102,7 @@ The object MUST NOT carry passwords, bearer tokens, authorization codes, PKCE ve
 | `audience` | context | issuer, naming the receiver | exact string against initiation `receiver_ref` | authenticated identity or access |
 | `receiver_ref` | initiation, context | agreed receiving party | exact string | a receiver role |
 | `client_ref` | initiation, context | receiver client registration | exact string | a client secret or access grant |
-| `destination_uri` | initiation, context | pre-registered redirect | exact string, https, no query, fragment, or asterisk | a browser-rewritten location |
+| `destination_uri` | initiation, context | pre-registered redirect | exact string after each value independently satisfies the https destination rules | a browser-rewritten location |
 | `transaction_ref` | initiation, context | receiver correlation | exact string against browser-bound state | the raw state value |
 | `nonce_ref` | initiation | receiver correlation | opaque reference | the raw nonce |
 | `requested_record_scope_refs` | initiation | receiver request | non-empty unique explicit bounds | receiver authorization |
@@ -116,11 +120,13 @@ The object MUST NOT carry passwords, bearer tokens, authorization codes, PKCE ve
 | `correlation_ref` | all | receiver | exact string across the attempt | a credential |
 | `outcome` | failure | receiver classification | closed vocabulary | success |
 | `retryable` | failure | matrix | true only for `dependency_unavailable` | a second redemption |
-| `occurred_at` | failure | receiver clock input | canonical UTC | a diagnostic payload |
+| `occurred_at` | failure | receiver clock input | calendar-valid UTC instant; an impossible date is non-conformant | a diagnostic payload |
 
 Opaque references are JSON strings with `minLength: 1`. This contract MUST NOT impose prefixes, UUIDs, product names, or hostnames. Resolution is out of scope.
 
-Timestamps use the v1.0 UTC grammar: `Z` only, no numeric offset, no leap-second `60`. Calendar validity is a conformance requirement.
+Timestamps use the v1.0 UTC grammar: `Z` only, no numeric offset, no leap-second `60`, years 0000 through 9999. Calendar validity is a conformance requirement for every timestamp on initiation, authenticated context, and failure. Instant order and duration use integer whole seconds plus the exact fractional digit string.
+
+A destination is an absolute URI with the exact scheme `https`, a nonempty ASCII DNS name, IPv4 address, or IPv6 literal, an optional decimal port from 0 through 65535, and an optional path. It has no user information, query, fragment, asterisk, whitespace, control character, or raw backslash. Percent-encoding is not decoded, and a default port is not inserted or removed. Exact registered destination comparison is string equality of two values that each passed these rules. The JSON Schema pattern does not express this grammar; executable conformance does.
 
 ## 5. Profile sequence
 
@@ -163,7 +169,7 @@ Schema validity is necessary and not sufficient. Conforming evaluation MUST appl
 1. If a required dependency cannot be reached, the outcome is `dependency_unavailable`, `retryable` true, with no accepted context, no empty scope, no unscoped redirect, and no receiver session.
 2. If the peer `contract_family`, `contract_version`, or `profile` is not this published triple, the outcome is `unsupported_version`.
 3. If a record-scope array or `source_permission_refs` is empty, duplicated, wildcarded, not in ascending UTF-16 code-unit order, or contains a bound that is a proper prefix of another, or if context record scopes are not a subset of the initiation request, the outcome is `scope_invalid`.
-4. If the peer object otherwise fails schema validation, the outcome is `malformed`.
+4. If the peer object otherwise fails schema validation, a timestamp on either peer object or the evaluation instant is not a calendar-valid UTC instant, or `destination_uri` fails the section 4 destination rules, the outcome is `malformed`.
 5. If the code was already consumed and this attempt is not an uncertain reconciliation of the same complete authenticated context, the outcome is `replayed`. Equality with the redeemed context only establishes a reconciliation candidate. That candidate MUST still pass the lifetime, revocation, binding, presentation, attestation, and source-bound rules below before acceptance. A difference in any normative field fails closed as `replayed` and MUST NOT mint another receiver session.
 6. If a lifetime is inverted, non-positive, or over the profile maximum, if context `issued_at` falls outside the initiation code window, or if the evaluation instant is at or after the context `expires_at`, the outcome is `expired`. An evaluation instant before `issued_at` fails closed as `unverified`. Elapse of the code window after a timely `issued_at` does not by itself expire the context. Lifetime comparison retains the full fractional-second precision of each timestamp and does not round. Exactly 60 seconds is within the code maximum, and exactly 300 seconds is within the context maximum. Any greater duration is expired.
 7. If issuer, audience, receiver, client, destination, handoff, transaction, or correlation binding does not match, or the issuer attestation is revoked, the outcome is `unverified`.
@@ -232,7 +238,9 @@ Minimum coverage:
 - additional unknown fields;
 - empty, duplicate, and wildcard scopes;
 - issuer, audience, receiver, and destination mismatch;
-- expired and inverted lifetimes, including the 60-second and 5-minute maxima;
+- expired and inverted lifetimes, including the 60-second and 5-minute maxima and fractional excess;
+- calendar-valid and calendar-invalid timestamps on initiation, authenticated context, and failure, including years 0000–0099;
+- destination URI authority, user information, port, IPv6, and backslash rejection without canonicalizing a valid registered URI;
 - unsupported contract version and profile;
 - forged and browser-authored context rejection;
 - replay and `dependency_unavailable`, including the ban on a second receiver session and on converting dependency failure into success.
