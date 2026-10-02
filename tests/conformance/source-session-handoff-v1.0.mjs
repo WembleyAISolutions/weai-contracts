@@ -4,6 +4,18 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
+import {
+  assessSourceSessionHandoff,
+  compareInstants,
+  contextSemanticsHold,
+  destinationUriValid,
+  durationWithin,
+  failureObjectConforms,
+  initiationSemanticsHold,
+  parseUtc,
+  retryableFor,
+  sameCompleteAuthenticatedContext,
+} from "./source-session-handoff/semantics.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const manifest = JSON.parse(
@@ -92,371 +104,6 @@ function schemaForFixture(relPath) {
   throw new Error(`no schema for ${relPath}`);
 }
 
-function retryableFor(outcome) {
-  switch (outcome) {
-    case "malformed":
-    case "unverified":
-    case "expired":
-    case "replayed":
-    case "identity_not_bound":
-    case "scope_invalid":
-    case "permission_denied":
-    case "unsupported_version":
-      return false;
-    case "dependency_unavailable":
-      return true;
-    default: {
-      const unknown = outcome;
-      throw new Error(`unsupported outcome ${unknown}`);
-    }
-  }
-}
-
-function closedResult(failure) {
-  return {
-    failure,
-    retryable: failure === null ? false : retryableFor(failure),
-    contextAccepted: false,
-    grantsReceiverAccess: false,
-    mintsReceiverSession: false,
-    mintsAdditionalReceiverSession: false,
-    synthesizedUnscopedRedirect: false,
-    synthesizedEmptyContext: false,
-    reconciled: false,
-  };
-}
-
-function acceptedResult() {
-  return {
-    failure: null,
-    retryable: false,
-    contextAccepted: true,
-    grantsReceiverAccess: false,
-    mintsReceiverSession: false,
-    mintsAdditionalReceiverSession: false,
-    synthesizedUnscopedRedirect: false,
-    synthesizedEmptyContext: false,
-    reconciled: false,
-  };
-}
-
-const UTC_TIMESTAMP_PATTERN =
-  /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(\.\d+)?Z$/;
-
-function isLeapYear(year) {
-  return year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
-}
-
-function monthLength(year, month) {
-  if (month === 2) {
-    return isLeapYear(year) ? 29 : 28;
-  }
-  if (month === 4 || month === 6 || month === 9 || month === 11) {
-    return 30;
-  }
-  return 31;
-}
-
-function parseUtc(ts) {
-  if (typeof ts !== "string") {
-    return null;
-  }
-  const match = UTC_TIMESTAMP_PATTERN.exec(ts);
-  if (!match) {
-    return null;
-  }
-  const year = match[1];
-  const month = match[2];
-  const day = match[3];
-  const hour = match[4];
-  const minute = match[5];
-  const second = match[6];
-  const fraction = match[7] === undefined ? "" : match[7].slice(1);
-  const yearNum = Number(year);
-  const monthNum = Number(month);
-  const dayNum = Number(day);
-  if (dayNum > monthLength(yearNum, monthNum)) {
-    return null;
-  }
-  return { year, month, day, hour, minute, second, fraction };
-}
-
-function instantParts(ts) {
-  const parsed = parseUtc(ts);
-  if (parsed === null) {
-    return null;
-  }
-  const ms = Date.UTC(
-    Number(parsed.year),
-    Number(parsed.month) - 1,
-    Number(parsed.day),
-    Number(parsed.hour),
-    Number(parsed.minute),
-    Number(parsed.second),
-  );
-  if (!Number.isFinite(ms)) {
-    return null;
-  }
-  return {
-    seconds: BigInt(ms) / 1000n,
-    fraction: parsed.fraction,
-  };
-}
-
-function compareInstants(leftTs, rightTs) {
-  const left = instantParts(leftTs);
-  const right = instantParts(rightTs);
-  if (left === null || right === null) {
-    return null;
-  }
-  if (left.seconds < right.seconds) {
-    return -1;
-  }
-  if (left.seconds > right.seconds) {
-    return 1;
-  }
-  const width = Math.max(left.fraction.length, right.fraction.length);
-  const leftFrac = left.fraction.padEnd(width, "0");
-  const rightFrac = right.fraction.padEnd(width, "0");
-  if (leftFrac < rightFrac) {
-    return -1;
-  }
-  if (leftFrac > rightFrac) {
-    return 1;
-  }
-  return 0;
-}
-
-function durationWithin(start, end, maxSeconds) {
-  const left = instantParts(start);
-  const right = instantParts(end);
-  if (left === null || right === null) {
-    return false;
-  }
-  let whole = right.seconds - left.seconds;
-  const width = Math.max(left.fraction.length, right.fraction.length);
-  let frac = 0n;
-  if (width > 0) {
-    const scale = 10n ** BigInt(width);
-    const leftFrac = BigInt(left.fraction.padEnd(width, "0"));
-    const rightFrac = BigInt(right.fraction.padEnd(width, "0"));
-    frac = rightFrac - leftFrac;
-    if (frac < 0n) {
-      whole -= 1n;
-      frac += scale;
-    }
-  }
-  if (whole < 0n || (whole === 0n && frac === 0n)) {
-    return false;
-  }
-  if (whole > maxSeconds) {
-    return false;
-  }
-  if (whole === maxSeconds && frac > 0n) {
-    return false;
-  }
-  return true;
-}
-
-function constantsUnsupported(obj) {
-  if (obj === null || typeof obj !== "object" || Array.isArray(obj)) {
-    return true;
-  }
-  return obj.contract_family !== FAMILY || obj.contract_version !== VERSION || obj.profile !== PROFILE;
-}
-
-function sortedAscending(arr) {
-  const sorted = [...arr].sort();
-  return arr.every((item, index) => item === sorted[index]);
-}
-
-function ambiguousPrefix(arr) {
-  const sorted = [...arr].sort();
-  for (let i = 0; i < sorted.length; i += 1) {
-    for (let j = i + 1; j < sorted.length; j += 1) {
-      if (sorted[j].startsWith(sorted[i])) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-function scopeArrayInvalid(arr) {
-  if (!Array.isArray(arr)) {
-    return false;
-  }
-  if (arr.length === 0) {
-    return true;
-  }
-  if (new Set(arr).size !== arr.length) {
-    return true;
-  }
-  if (arr.some((item) => typeof item !== "string" || item.length === 0 || item.includes("*") || /\s/.test(item))) {
-    return true;
-  }
-  if (!sortedAscending(arr)) {
-    return true;
-  }
-  return ambiguousPrefix(arr);
-}
-
-function isSubset(inner, outer) {
-  const allowed = new Set(outer);
-  return inner.every((item) => allowed.has(item));
-}
-
-function scopeProblem(initiation, context) {
-  const requested = initiation?.requested_record_scope_refs;
-  const actual = context?.record_scope_refs;
-  const permissions = context?.source_permission_refs;
-  if (scopeArrayInvalid(requested) || scopeArrayInvalid(actual) || scopeArrayInvalid(permissions)) {
-    return true;
-  }
-  if (Array.isArray(requested) && Array.isArray(actual) && !isSubset(actual, requested)) {
-    return true;
-  }
-  return false;
-}
-
-function sameArray(left, right) {
-  return Array.isArray(left)
-    && Array.isArray(right)
-    && left.length === right.length
-    && left.every((item, index) => item === right[index]);
-}
-
-function bindingMismatch(initiation, context) {
-  return context.issuer !== initiation.issuer
-    || context.audience !== initiation.receiver_ref
-    || context.receiver_ref !== initiation.receiver_ref
-    || context.client_ref !== initiation.client_ref
-    || context.destination_uri !== initiation.destination_uri
-    || context.handoff_ref !== initiation.handoff_ref
-    || context.transaction_ref !== initiation.transaction_ref
-    || context.correlation_ref !== initiation.correlation_ref;
-}
-
-function issuedInsideCodeWindow(initiation, context) {
-  const afterStart = compareInstants(initiation.initiated_at, context.issued_at);
-  const beforeEnd = compareInstants(context.issued_at, initiation.expires_at);
-  return afterStart !== null && beforeEnd !== null && afterStart <= 0 && beforeEnd <= 0;
-}
-
-function lifetimeFailure(initiation, context, at) {
-  if (!durationWithin(initiation.initiated_at, initiation.expires_at, CODE_WINDOW_SECONDS)) {
-    return "expired";
-  }
-  if (!durationWithin(context.issued_at, context.expires_at, CONTEXT_WINDOW_SECONDS)) {
-    return "expired";
-  }
-  if (!issuedInsideCodeWindow(initiation, context)) {
-    return "expired";
-  }
-  const afterIssued = compareInstants(context.issued_at, at);
-  const beforeExpiry = compareInstants(at, context.expires_at);
-  if (afterIssued === null || beforeExpiry === null) {
-    return "unverified";
-  }
-  if (afterIssued > 0) {
-    return "unverified";
-  }
-  if (beforeExpiry >= 0) {
-    return "expired";
-  }
-  return null;
-}
-
-function identityMatches(context, attested) {
-  if (attested === null || typeof attested !== "object") {
-    return false;
-  }
-  if (context.source_session_ref === context.source_context_ref) {
-    return false;
-  }
-  return context.subject_ref === attested.subject_ref
-    && context.organisation_ref === attested.organisation_ref
-    && context.account_ref === attested.account_ref
-    && context.source_role_ref === attested.source_role_ref
-    && context.source_session_ref === attested.source_session_ref
-    && context.source_context_ref === attested.source_context_ref
-    && sameArray(context.source_permission_refs, attested.source_permission_refs)
-    && sameArray(context.record_scope_refs, attested.record_scope_refs);
-}
-
-function sameCompleteAuthenticatedContext(context, redeemed) {
-  if (
-    context === null
-    || redeemed === null
-    || typeof context !== "object"
-    || typeof redeemed !== "object"
-    || Array.isArray(context)
-    || Array.isArray(redeemed)
-  ) {
-    return false;
-  }
-  const fields = loadJson(CONTEXT_SCHEMA).required;
-  if (Object.keys(context).length !== fields.length || Object.keys(redeemed).length !== fields.length) {
-    return false;
-  }
-  for (const key of fields) {
-    if (!Object.hasOwn(context, key) || !Object.hasOwn(redeemed, key)) {
-      return false;
-    }
-    const left = context[key];
-    const right = redeemed[key];
-    if (Array.isArray(left) || Array.isArray(right)) {
-      if (!sameArray(left, right)) {
-        return false;
-      }
-    } else if (typeof left !== "string" || typeof right !== "string" || left !== right) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function assessSourceSessionHandoff(input) {
-  if (input.dependencyAvailable === false) {
-    return closedResult("dependency_unavailable");
-  }
-  if (constantsUnsupported(input.initiation) || constantsUnsupported(input.context)) {
-    return closedResult("unsupported_version");
-  }
-  if (scopeProblem(input.initiation, input.context)) {
-    return closedResult("scope_invalid");
-  }
-  if (input.schemaValidInitiation === false || input.schemaValidContext === false) {
-    return closedResult("malformed");
-  }
-  const reconciliationCandidate = input.uncertain === true
-    && sameCompleteAuthenticatedContext(input.context, input.redeemedContext);
-  if (input.codeConsumed === true && input.uncertain !== true) {
-    return closedResult("replayed");
-  }
-  if (input.uncertain === true && !reconciliationCandidate) {
-    return closedResult("replayed");
-  }
-  const lifetime = lifetimeFailure(input.initiation, input.context, input.at);
-  if (lifetime !== null) {
-    return closedResult(lifetime);
-  }
-  if (input.revoked === true || bindingMismatch(input.initiation, input.context)) {
-    return closedResult("unverified");
-  }
-  if (input.presentation !== "server_redemption" || !identityMatches(input.context, input.attested)) {
-    return closedResult("identity_not_bound");
-  }
-  if (input.requestReceiverAccess === true) {
-    return closedResult("permission_denied");
-  }
-  const accepted = acceptedResult();
-  if (reconciliationCandidate) {
-    accepted.reconciled = true;
-  }
-  return accepted;
-}
-
 function attestedFrom(context) {
   return {
     subject_ref: context.subject_ref,
@@ -507,6 +154,15 @@ test("source-session-handoff positive wire fixtures validate", async (t) => {
       assert.equal(Object.hasOwn(fixture, "example_id"), false);
       assert.equal(Object.hasOwn(fixture, "notes"), false);
       assert.equal(validate(fixture), true, formatErrors(validate));
+      if (item.schema === INITIATION_SCHEMA) {
+        assert.equal(initiationSemanticsHold(fixture), true, item.fixture);
+      }
+      if (item.schema === CONTEXT_SCHEMA) {
+        assert.equal(contextSemanticsHold(fixture), true, item.fixture);
+      }
+      if (item.schema === FAILURE_SCHEMA) {
+        assert.equal(failureObjectConforms(fixture, true), true, item.fixture);
+      }
     });
   }
 });
@@ -518,6 +174,9 @@ test("source-session-handoff negative wire fixtures are rejected", async (t) => 
       const fixture = loadJson(item.fixture);
       assert.equal(schemaForFixture(item.fixture), item.schema);
       assert.equal(validate(fixture), false, `${item.fixture} unexpectedly validated`);
+      if (item.schema === FAILURE_SCHEMA) {
+        assert.equal(failureObjectConforms(fixture, false), false, item.fixture);
+      }
     });
   }
 });
@@ -529,6 +188,12 @@ test("source-session-handoff semantic fixtures remain schema-valid", async (t) =
       const fixture = loadJson(item.fixture);
       assert.equal(schemaForFixture(item.fixture), item.schema);
       assert.equal(validate(fixture), true, formatErrors(validate));
+      if (item.schema === INITIATION_SCHEMA) {
+        assert.equal(initiationSemanticsHold(fixture), true, item.fixture);
+      }
+      if (item.schema === CONTEXT_SCHEMA) {
+        assert.equal(contextSemanticsHold(fixture), true, item.fixture);
+      }
     });
   }
 });
@@ -642,6 +307,7 @@ test("source-session-handoff failure matrix matches the schema and semantics", (
       occurred_at: "2026-08-15T00:00:10Z",
     };
     assert.equal(validate(wire), true, formatErrors(validate));
+    assert.equal(failureObjectConforms(wire, true), true, entry.outcome);
     wire.retryable = !entry.retryable;
     assert.equal(validate(wire), false, `${entry.outcome} accepted the wrong retryable flag`);
   }
@@ -1154,6 +820,7 @@ test("source-session-handoff failure occurred_at must be a real UTC calendar day
       const failure = withOccurredAt(occurredAt);
       assert.equal(validate(failure), true, formatErrors(validate));
       assert.equal(parseUtc(failure.occurred_at) !== null, calendarValid);
+      assert.equal(failureObjectConforms(failure, true), calendarValid, name);
     });
   }
 });
@@ -1213,4 +880,219 @@ test("source-session-handoff wire schemas stay closed", () => {
     assert.equal(schema.properties.contract_version.const, VERSION);
     assert.equal(schema.properties.profile.const, PROFILE);
   }
+});
+
+test("source-session-handoff utc instants keep calendar and fractional precision", async (t) => {
+  const engine = readFileSync(
+    join(repoRoot, "tests/conformance/source-session-handoff/semantics.mjs"),
+    "utf8",
+  );
+  assert.equal(/\bDate\s*\./.test(engine), false);
+  assert.equal(/new\s+Date\s*\(/.test(engine), false);
+  assert.equal(engine.includes("Date.parse"), false);
+
+  const legacyStart = Date.UTC(99, 11, 31, 23, 59, 30);
+  const legacyEnd = Date.UTC(100, 0, 1, 0, 0, 0);
+  assert.ok(legacyStart > legacyEnd);
+
+  await t.test("0099-12-31 to 0100-01-01 is 30 seconds", () => {
+    assert.equal(compareInstants("0099-12-31T23:59:30Z", "0100-01-01T00:00:00Z"), -1);
+    assert.equal(durationWithin("0099-12-31T23:59:30Z", "0100-01-01T00:00:00Z", CODE_WINDOW_SECONDS), true);
+    assert.equal(durationWithin("0099-12-31T23:59:30Z", "0100-01-01T00:00:00Z", 29n), false);
+  });
+  await t.test("year 0000 leap day and the following new year", () => {
+    assert.notEqual(parseUtc("0000-02-29T00:00:00Z"), null);
+    assert.equal(parseUtc("0000-02-30T00:00:00Z"), null);
+    assert.equal(durationWithin("0000-12-31T23:59:30Z", "0001-01-01T00:00:00Z", CODE_WINDOW_SECONDS), true);
+    assert.equal(compareInstants("0001-01-01T00:00:00Z", "0099-12-31T23:59:30Z"), -1);
+  });
+  await t.test("leap and non-leap February boundaries", () => {
+    assert.notEqual(parseUtc("2000-02-29T12:00:00Z"), null);
+    assert.equal(parseUtc("1900-02-29T12:00:00Z"), null);
+    assert.equal(parseUtc("2026-02-29T12:00:00Z"), null);
+    assert.notEqual(parseUtc("2026-02-28T23:59:30Z"), null);
+    assert.equal(parseUtc("2026-04-31T00:00:00Z"), null);
+    assert.notEqual(parseUtc("2026-04-30T23:59:59.5Z"), null);
+    assert.equal(durationWithin("2024-02-29T23:59:30Z", "2024-03-01T00:00:00Z", CODE_WINDOW_SECONDS), true);
+    assert.equal(durationWithin("2026-02-28T23:59:30Z", "2026-03-01T00:00:00Z", CODE_WINDOW_SECONDS), true);
+    assert.equal(durationWithin("2026-12-31T23:59:30Z", "2027-01-01T00:00:00Z", CODE_WINDOW_SECONDS), true);
+  });
+  await t.test("fractional seconds are not truncated", () => {
+    assert.equal(compareInstants("2026-08-15T00:00:00.1Z", "2026-08-15T00:00:00.10Z"), 0);
+    assert.equal(compareInstants("2026-08-15T00:00:00.1Z", "2026-08-15T00:00:00.1000000001Z"), -1);
+    assert.equal(durationWithin("2026-08-15T00:00:00Z", "2026-08-15T00:01:00Z", CODE_WINDOW_SECONDS), true);
+    assert.equal(
+      durationWithin("2026-08-15T00:00:00Z", "2026-08-15T00:01:00.0000000001Z", CODE_WINDOW_SECONDS),
+      false,
+    );
+    assert.equal(durationWithin("2026-08-15T00:00:20Z", "2026-08-15T00:05:20Z", CONTEXT_WINDOW_SECONDS), true);
+    assert.equal(
+      durationWithin("2026-08-15T00:00:20Z", "2026-08-15T00:05:20.0000000001Z", CONTEXT_WINDOW_SECONDS),
+      false,
+    );
+  });
+  await t.test("low-year code window is accepted by the handoff oracle", () => {
+    const initiation = structuredClone(loadJson(INITIATION_EXAMPLE));
+    initiation.initiated_at = "0099-12-31T23:59:30Z";
+    initiation.expires_at = "0100-01-01T00:00:00Z";
+    const context = structuredClone(loadJson(CONTEXT_EXAMPLE));
+    context.issued_at = "0099-12-31T23:59:40Z";
+    context.expires_at = "0100-01-01T00:04:40Z";
+    assert.equal(validatorFor(INITIATION_SCHEMA)(initiation), true);
+    assert.equal(validatorFor(CONTEXT_SCHEMA)(context), true);
+    assert.equal(initiationSemanticsHold(initiation), true);
+    assert.equal(contextSemanticsHold(context), true);
+    const result = assessSourceSessionHandoff(presentationOf({
+      initiation,
+      context,
+      at: "0099-12-31T23:59:50Z",
+    }));
+    assert.equal(result.failure, null);
+    assert.equal(result.contextAccepted, true);
+    assertNoSession(result);
+  });
+});
+
+test("source-session-handoff impossible timestamps fail object conformance", async (t) => {
+  const cases = [
+    ["initiation initiated_at", "initiated_at", "2026-02-30T00:00:00Z"],
+    ["initiation expires_at", "expires_at", "1900-02-29T00:00:00Z"],
+    ["context issued_at", "issued_at", "2026-04-31T00:00:00.1Z"],
+    ["context expires_at", "expires_at", "2026-02-30T00:00:00Z"],
+  ];
+  for (const [name, field, value] of cases) {
+    await t.test(name, () => {
+      const initiation = structuredClone(loadJson(INITIATION_EXAMPLE));
+      const context = structuredClone(loadJson(CONTEXT_EXAMPLE));
+      if (field === "initiated_at" || field === "expires_at" && name.startsWith("initiation")) {
+        initiation[field] = value;
+      }
+      if (name.startsWith("context")) {
+        context[field] = value;
+      }
+      const schemaValidInitiation = validatorFor(INITIATION_SCHEMA)(initiation);
+      const schemaValidContext = validatorFor(CONTEXT_SCHEMA)(context);
+      assert.equal(schemaValidInitiation, true);
+      assert.equal(schemaValidContext, true);
+      if (name.startsWith("initiation")) {
+        assert.equal(initiationSemanticsHold(initiation), false);
+      } else {
+        assert.equal(contextSemanticsHold(context), false);
+      }
+      const result = assessSourceSessionHandoff(presentationOf({ initiation, context }));
+      assert.equal(result.failure, "malformed");
+      assert.equal(result.contextAccepted, false);
+      assert.equal(result.reconciled, false);
+      assertNoSession(result);
+    });
+  }
+  await t.test("failure occurred_at 2026-02-30 is non-conformant", () => {
+    const failure = structuredClone(loadJson(FAILURE_EXAMPLE));
+    failure.occurred_at = "2026-02-30T00:00:00Z";
+    assert.equal(validatorFor(FAILURE_SCHEMA)(failure), true);
+    assert.equal(failureObjectConforms(failure, true), false);
+  });
+  await t.test("invalid evaluation instant is malformed", () => {
+    const result = assessSourceSessionHandoff(presentationOf({ at: "2026-02-30T00:00:00Z" }));
+    assert.equal(result.failure, "malformed");
+    assert.equal(result.contextAccepted, false);
+  });
+});
+
+test("source-session-handoff destination uris require a real https authority", async (t) => {
+  const accepted = [
+    "https://receiver.example/session-handoff/callback",
+    "https://receiver.example:443/session-handoff/callback",
+    "https://[2001:db8::1]/session-handoff/callback",
+    "https://[::1]:8443/callback",
+    "https://192.0.2.10/callback",
+    "https://[::ffff:192.0.2.1]/callback",
+    "https://[0:0:0:0:0:0:0:1]/callback",
+  ];
+  for (const uri of accepted) {
+    await t.test(`accepts ${uri}`, () => {
+      assert.equal(destinationUriValid(uri), true, uri);
+    });
+  }
+
+  const schemaValidRejects = [
+    "https://:",
+    "https:///",
+    "https://user:pw@receiver.example/callback",
+    "https://receiver.example:65536/callback",
+    "https://receiver.example:/callback",
+    "https://[::1",
+    "https://[:::1]/callback",
+    "https://[gggg::1]/callback",
+    "https://receiver.example/foo\\bar",
+    "https://receiver.example\\other.example/callback",
+    "https://192.0.2.010/callback",
+  ];
+  const schemaInvalidRejects = [
+    "http://receiver.example/callback",
+    "https://receiver.example/callback?code=1",
+    "https://receiver.example/callback#fragment",
+    "https://receiver.example/*/callback",
+    "https://receiver.example/call back",
+  ];
+
+  function pair(uri) {
+    const initiation = structuredClone(loadJson(INITIATION_EXAMPLE));
+    const context = structuredClone(loadJson(CONTEXT_EXAMPLE));
+    initiation.destination_uri = uri;
+    context.destination_uri = uri;
+    return { initiation, context };
+  }
+
+  for (const uri of schemaValidRejects) {
+    await t.test(`rejects schema-valid ${uri}`, () => {
+      const { initiation, context } = pair(uri);
+      assert.equal(validatorFor(INITIATION_SCHEMA)(initiation), true, uri);
+      assert.equal(destinationUriValid(uri), false, uri);
+      assert.equal(initiationSemanticsHold(initiation), false, uri);
+      const result = assessSourceSessionHandoff(presentationOf({ initiation, context }));
+      assert.equal(result.failure, "malformed", uri);
+      assert.equal(result.contextAccepted, false, uri);
+      assertNoSession(result);
+    });
+  }
+  for (const uri of schemaInvalidRejects) {
+    await t.test(`rejects ${uri}`, () => {
+      const { initiation } = pair(uri);
+      assert.equal(validatorFor(INITIATION_SCHEMA)(initiation), false, uri);
+      assert.equal(destinationUriValid(uri), false, uri);
+    });
+  }
+  await t.test("host case is not canonicalized", () => {
+    const context = structuredClone(loadJson(CONTEXT_EXAMPLE));
+    context.destination_uri = "https://Receiver.example/session-handoff/callback";
+    assert.equal(destinationUriValid(context.destination_uri), true);
+    const result = assessSourceSessionHandoff(presentationOf({ context }));
+    assert.equal(result.failure, "unverified");
+    assert.equal(result.contextAccepted, false);
+  });
+  await t.test("exact port spelling is not canonicalized", () => {
+    const initiation = loadJson(INITIATION_EXAMPLE);
+    const context = structuredClone(loadJson(CONTEXT_EXAMPLE));
+    context.destination_uri = "https://receiver.example:443/session-handoff/callback";
+    assert.equal(destinationUriValid(initiation.destination_uri), true);
+    assert.equal(destinationUriValid(context.destination_uri), true);
+    const result = assessSourceSessionHandoff(presentationOf({ context }));
+    assert.equal(result.failure, "unverified");
+    assert.equal(result.contextAccepted, false);
+  });
+  await t.test("reconciled invalid destination is still malformed", () => {
+    const { initiation, context } = pair("https://:");
+    const result = assessSourceSessionHandoff(presentationOf({
+      initiation,
+      context,
+      uncertain: true,
+      codeConsumed: true,
+      redeemedContext: context,
+    }));
+    assert.equal(result.failure, "malformed");
+    assert.equal(result.reconciled, false);
+    assert.equal(result.contextAccepted, false);
+    assertNoSession(result);
+  });
 });

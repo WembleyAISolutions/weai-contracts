@@ -54,7 +54,7 @@
     },
     "occurred_at": {
       "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/utcTimestamp",
-      "description": "Time this failure was recorded."
+      "description": "Time this failure was recorded. The pattern is the v1.0 UTC grammar. Calendar validity, including leap days and impossible month lengths, is a conformance requirement and a schema match alone is not conformance."
     }
   },
   "allOf": [
