@@ -13,8 +13,8 @@ const manifest = JSON.parse(
 const FAMILY = "source-session-handoff";
 const VERSION = "v1.0";
 const PROFILE = "oauth2-authorization-code-pkce-s256-v1";
-const CODE_WINDOW_NS = 60n * 1000000000n;
-const CONTEXT_WINDOW_NS = 300n * 1000000000n;
+const CODE_WINDOW_SECONDS = 60n;
+const CONTEXT_WINDOW_SECONDS = 300n;
 const EVALUATION_AT = "2026-08-15T00:00:30Z";
 
 const INITIATION_SCHEMA = "contracts/source-session-handoff/v1.0/initiation.schema.json";
@@ -181,7 +181,7 @@ function parseUtc(ts) {
   return { year, month, day, hour, minute, second, fraction };
 }
 
-function toNanos(ts) {
+function instantParts(ts) {
   const parsed = parseUtc(ts);
   if (parsed === null) {
     return null;
@@ -194,22 +194,68 @@ function toNanos(ts) {
     Number(parsed.minute),
     Number(parsed.second),
   );
-  const head = (parsed.fraction + "000000000").slice(0, 9);
-  let nanos = BigInt(ms) * 1000000n + BigInt(head);
-  if (parsed.fraction.length > 9 && /[1-9]/.test(parsed.fraction.slice(9))) {
-    nanos += 1n;
+  if (!Number.isFinite(ms)) {
+    return null;
   }
-  return nanos;
+  return {
+    seconds: BigInt(ms) / 1000n,
+    fraction: parsed.fraction,
+  };
 }
 
-function durationOk(start, end, maxNs) {
-  const left = toNanos(start);
-  const right = toNanos(end);
+function compareInstants(leftTs, rightTs) {
+  const left = instantParts(leftTs);
+  const right = instantParts(rightTs);
+  if (left === null || right === null) {
+    return null;
+  }
+  if (left.seconds < right.seconds) {
+    return -1;
+  }
+  if (left.seconds > right.seconds) {
+    return 1;
+  }
+  const width = Math.max(left.fraction.length, right.fraction.length);
+  const leftFrac = left.fraction.padEnd(width, "0");
+  const rightFrac = right.fraction.padEnd(width, "0");
+  if (leftFrac < rightFrac) {
+    return -1;
+  }
+  if (leftFrac > rightFrac) {
+    return 1;
+  }
+  return 0;
+}
+
+function durationWithin(start, end, maxSeconds) {
+  const left = instantParts(start);
+  const right = instantParts(end);
   if (left === null || right === null) {
     return false;
   }
-  const delta = right - left;
-  return delta > 0n && delta <= maxNs;
+  let whole = right.seconds - left.seconds;
+  const width = Math.max(left.fraction.length, right.fraction.length);
+  let frac = 0n;
+  if (width > 0) {
+    const scale = 10n ** BigInt(width);
+    const leftFrac = BigInt(left.fraction.padEnd(width, "0"));
+    const rightFrac = BigInt(right.fraction.padEnd(width, "0"));
+    frac = rightFrac - leftFrac;
+    if (frac < 0n) {
+      whole -= 1n;
+      frac += scale;
+    }
+  }
+  if (whole < 0n || (whole === 0n && frac === 0n)) {
+    return false;
+  }
+  if (whole > maxSeconds) {
+    return false;
+  }
+  if (whole === maxSeconds && frac > 0n) {
+    return false;
+  }
+  return true;
 }
 
 function constantsUnsupported(obj) {
@@ -263,7 +309,8 @@ function isSubset(inner, outer) {
 function scopeProblem(initiation, context) {
   const requested = initiation?.requested_record_scope_refs;
   const actual = context?.record_scope_refs;
-  if (scopeArrayInvalid(requested) || scopeArrayInvalid(actual)) {
+  const permissions = context?.source_permission_refs;
+  if (scopeArrayInvalid(requested) || scopeArrayInvalid(actual) || scopeArrayInvalid(permissions)) {
     return true;
   }
   if (Array.isArray(requested) && Array.isArray(actual) && !isSubset(actual, requested)) {
@@ -291,35 +338,30 @@ function bindingMismatch(initiation, context) {
 }
 
 function issuedInsideCodeWindow(initiation, context) {
-  const start = toNanos(initiation.initiated_at);
-  const issued = toNanos(context.issued_at);
-  const end = toNanos(initiation.expires_at);
-  if (start === null || issued === null || end === null) {
-    return false;
-  }
-  return start <= issued && issued <= end;
+  const afterStart = compareInstants(initiation.initiated_at, context.issued_at);
+  const beforeEnd = compareInstants(context.issued_at, initiation.expires_at);
+  return afterStart !== null && beforeEnd !== null && afterStart <= 0 && beforeEnd <= 0;
 }
 
 function lifetimeFailure(initiation, context, at) {
-  if (!durationOk(initiation.initiated_at, initiation.expires_at, CODE_WINDOW_NS)) {
+  if (!durationWithin(initiation.initiated_at, initiation.expires_at, CODE_WINDOW_SECONDS)) {
     return "expired";
   }
-  if (!durationOk(context.issued_at, context.expires_at, CONTEXT_WINDOW_NS)) {
+  if (!durationWithin(context.issued_at, context.expires_at, CONTEXT_WINDOW_SECONDS)) {
     return "expired";
   }
   if (!issuedInsideCodeWindow(initiation, context)) {
     return "expired";
   }
-  const issued = toNanos(context.issued_at);
-  const contextEnd = toNanos(context.expires_at);
-  const now = toNanos(at);
-  if (issued === null || contextEnd === null || now === null) {
+  const afterIssued = compareInstants(context.issued_at, at);
+  const beforeExpiry = compareInstants(at, context.expires_at);
+  if (afterIssued === null || beforeExpiry === null) {
     return "unverified";
   }
-  if (now < issued) {
+  if (afterIssued > 0) {
     return "unverified";
   }
-  if (now >= contextEnd) {
+  if (beforeExpiry >= 0) {
     return "expired";
   }
   return null;
@@ -342,11 +384,36 @@ function identityMatches(context, attested) {
     && sameArray(context.record_scope_refs, attested.record_scope_refs);
 }
 
-function sameRedeemedContext(context, redeemed) {
-  if (redeemed === null || typeof redeemed !== "object") {
+function sameCompleteAuthenticatedContext(context, redeemed) {
+  if (
+    context === null
+    || redeemed === null
+    || typeof context !== "object"
+    || typeof redeemed !== "object"
+    || Array.isArray(context)
+    || Array.isArray(redeemed)
+  ) {
     return false;
   }
-  return context.source_session_ref === redeemed.source_session_ref && identityMatches(context, redeemed);
+  const fields = loadJson(CONTEXT_SCHEMA).required;
+  if (Object.keys(context).length !== fields.length || Object.keys(redeemed).length !== fields.length) {
+    return false;
+  }
+  for (const key of fields) {
+    if (!Object.hasOwn(context, key) || !Object.hasOwn(redeemed, key)) {
+      return false;
+    }
+    const left = context[key];
+    const right = redeemed[key];
+    if (Array.isArray(left) || Array.isArray(right)) {
+      if (!sameArray(left, right)) {
+        return false;
+      }
+    } else if (typeof left !== "string" || typeof right !== "string" || left !== right) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function assessSourceSessionHandoff(input) {
@@ -366,7 +433,7 @@ function assessSourceSessionHandoff(input) {
     return closedResult("replayed");
   }
   if (input.uncertain === true) {
-    if (sameRedeemedContext(input.context, input.redeemedContext)) {
+    if (sameCompleteAuthenticatedContext(input.context, input.redeemedContext)) {
       const accepted = acceptedResult();
       accepted.reconciled = true;
       return accepted;
@@ -675,6 +742,30 @@ test("source-session-handoff expired and inverted lifetimes fail closed", async 
     const result = assessSourceSessionHandoff(presentationOf({ context }));
     assert.equal(result.failure, "expired");
   });
+  await t.test("60.0000000001 second code window is expired", () => {
+    const initiation = structuredClone(loadJson(INITIATION_EXAMPLE));
+    initiation.expires_at = "2026-08-15T00:01:00.0000000001Z";
+    assert.equal(validatorFor(INITIATION_SCHEMA)(initiation), true);
+    const result = assessSourceSessionHandoff(presentationOf({ initiation }));
+    assert.equal(result.failure, "expired");
+    assert.equal(result.contextAccepted, false);
+  });
+  await t.test("fractional excess on both ends is not rounded back to 60 seconds", () => {
+    const initiation = structuredClone(loadJson(INITIATION_EXAMPLE));
+    initiation.initiated_at = "2026-08-15T00:00:00.0000000001Z";
+    initiation.expires_at = "2026-08-15T00:01:00.0000000002Z";
+    assert.equal(validatorFor(INITIATION_SCHEMA)(initiation), true);
+    const result = assessSourceSessionHandoff(presentationOf({ initiation }));
+    assert.equal(result.failure, "expired");
+  });
+  await t.test("300.0000000001 second context is expired", () => {
+    const context = structuredClone(loadJson(CONTEXT_EXAMPLE));
+    context.expires_at = "2026-08-15T00:05:20.0000000001Z";
+    assert.equal(validatorFor(CONTEXT_SCHEMA)(context), true);
+    const result = assessSourceSessionHandoff(presentationOf({ context }));
+    assert.equal(result.failure, "expired");
+    assert.equal(result.contextAccepted, false);
+  });
 });
 
 test("source-session-handoff empty duplicate wildcard and ambiguous scopes fail closed", async (t) => {
@@ -716,6 +807,42 @@ test("source-session-handoff empty duplicate wildcard and ambiguous scopes fail 
     assert.equal(validatorFor(INITIATION_SCHEMA)(initiation), true);
     const result = assessSourceSessionHandoff(presentationOf({ initiation }));
     assert.equal(result.failure, "scope_invalid");
+  });
+  await t.test("unsorted source_permission_refs", () => {
+    const context = structuredClone(loadJson(CONTEXT_EXAMPLE));
+    context.source_permission_refs = ["permission-b", "permission-a"];
+    assert.equal(validatorFor(CONTEXT_SCHEMA)(context), true);
+    const result = assessSourceSessionHandoff(presentationOf({
+      context,
+      attested: attestedFrom(context),
+    }));
+    assert.equal(result.failure, "scope_invalid");
+    assert.equal(result.retryable, false);
+    assert.equal(result.contextAccepted, false);
+    assertNoSession(result);
+  });
+  await t.test("duplicate source_permission_refs", () => {
+    const context = structuredClone(loadJson(CONTEXT_EXAMPLE));
+    context.source_permission_refs = [
+      "source-permission-placeholder-001",
+      "source-permission-placeholder-001",
+    ];
+    assert.equal(validatorFor(CONTEXT_SCHEMA)(context), false);
+    const result = assessSourceSessionHandoff(presentationOf({ context }));
+    assert.equal(result.failure, "scope_invalid");
+    assert.equal(result.contextAccepted, false);
+  });
+  await t.test("ascending source_permission_refs", () => {
+    const context = structuredClone(loadJson(CONTEXT_EXAMPLE));
+    context.source_permission_refs = ["permission-a", "permission-b"];
+    assert.equal(validatorFor(CONTEXT_SCHEMA)(context), true);
+    const result = assessSourceSessionHandoff(presentationOf({
+      context,
+      attested: attestedFrom(context),
+    }));
+    assert.equal(result.failure, null);
+    assert.equal(result.contextAccepted, true);
+    assertNoSession(result);
   });
   await t.test("scope outside the initiation request", () => {
     const context = loadJson(
@@ -846,6 +973,92 @@ test("source-session-handoff replay and uncertain reconcile do not create a seco
   assert.equal(reconciledOther.failure, "replayed");
   assert.equal(reconciledOther.contextAccepted, false);
   assertNoSession(reconciledOther);
+});
+
+test("source-session-handoff reconciliation requires the complete authenticated context", async (t) => {
+  const redeemed = loadJson(CONTEXT_EXAMPLE);
+  assert.equal(sameCompleteAuthenticatedContext(redeemed, structuredClone(redeemed)), true);
+
+  const scalarMutations = [
+    ["issuer", "issuer-placeholder-999"],
+    ["audience", "receiver-placeholder-999"],
+    ["receiver_ref", "receiver-placeholder-999"],
+    ["client_ref", "client-placeholder-999"],
+    ["destination_uri", "https://receiver.example/session-handoff/other"],
+    ["handoff_ref", "handoff-placeholder-999"],
+    ["transaction_ref", "transaction-placeholder-999"],
+    ["correlation_ref", "correlation-placeholder-999"],
+    ["source_session_ref", "source-session-placeholder-999"],
+    ["source_context_ref", "source-context-placeholder-999"],
+    ["subject_ref", "subject-placeholder-999"],
+    ["organisation_ref", "organisation-placeholder-999"],
+    ["account_ref", "account-placeholder-999"],
+    ["source_role_ref", "source-role-placeholder-999"],
+    ["issued_at", "2026-08-15T00:00:21Z"],
+    ["expires_at", "2026-08-15T00:04:21Z"],
+    ["contract_version", "v1.1"],
+    ["profile", "oauth2-authorization-code-pkce-plain-v1"],
+    ["contract_family", "execution-request"],
+  ];
+  const arrayMutations = [
+    ["source_permission_refs", ["source-permission-placeholder-002"]],
+    ["record_scope_refs", ["record-scope-placeholder-001", "record-scope-placeholder-002"]],
+  ];
+
+  function assertRejected(label, candidate, initiation) {
+    assert.equal(sameCompleteAuthenticatedContext(candidate, redeemed), false, label);
+    const result = assessSourceSessionHandoff(presentationOf({
+      initiation,
+      context: candidate,
+      uncertain: true,
+      codeConsumed: true,
+      redeemedContext: redeemed,
+      attested: attestedFrom(redeemed),
+    }));
+    assert.equal(result.reconciled, false, label);
+    assert.equal(result.contextAccepted, false, label);
+    assert.equal(result.failure === null, false, label);
+    assertNoSession(result);
+  }
+
+  for (const [field, value] of scalarMutations) {
+    await t.test(field, () => {
+      const candidate = structuredClone(redeemed);
+      candidate[field] = value;
+      assertRejected(field, candidate, loadJson(INITIATION_EXAMPLE));
+    });
+  }
+  for (const [field, value] of arrayMutations) {
+    await t.test(field, () => {
+      const candidate = structuredClone(redeemed);
+      candidate[field] = value;
+      assertRejected(field, candidate, loadJson(INITIATION_EXAMPLE));
+    });
+  }
+  await t.test("record scope that remains a requested subset", () => {
+    const initiation = loadJson(
+      "tests/conformance/source-session-handoff/v1.0/positive/initiation.multiple-scopes.json",
+    );
+    const full = loadJson(
+      "tests/conformance/source-session-handoff/v1.0/positive/authenticated-context.multiple-bounds.json",
+    );
+    const narrowed = structuredClone(full);
+    narrowed.record_scope_refs = ["record-scope-placeholder-001"];
+    assert.equal(validatorFor(CONTEXT_SCHEMA)(narrowed), true);
+    assert.equal(sameCompleteAuthenticatedContext(narrowed, full), false);
+    const result = assessSourceSessionHandoff(presentationOf({
+      initiation,
+      context: narrowed,
+      uncertain: true,
+      codeConsumed: true,
+      redeemedContext: full,
+      attested: attestedFrom(full),
+    }));
+    assert.equal(result.failure, "replayed");
+    assert.equal(result.reconciled, false);
+    assert.equal(result.contextAccepted, false);
+    assertNoSession(result);
+  });
 });
 
 test("source-session-handoff dependency_unavailable never becomes success or an unscoped redirect", () => {
