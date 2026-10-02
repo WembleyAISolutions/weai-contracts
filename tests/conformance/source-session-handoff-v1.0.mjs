@@ -429,15 +429,12 @@ function assessSourceSessionHandoff(input) {
   if (input.schemaValidInitiation === false || input.schemaValidContext === false) {
     return closedResult("malformed");
   }
+  const reconciliationCandidate = input.uncertain === true
+    && sameCompleteAuthenticatedContext(input.context, input.redeemedContext);
   if (input.codeConsumed === true && input.uncertain !== true) {
     return closedResult("replayed");
   }
-  if (input.uncertain === true) {
-    if (sameCompleteAuthenticatedContext(input.context, input.redeemedContext)) {
-      const accepted = acceptedResult();
-      accepted.reconciled = true;
-      return accepted;
-    }
+  if (input.uncertain === true && !reconciliationCandidate) {
     return closedResult("replayed");
   }
   const lifetime = lifetimeFailure(input.initiation, input.context, input.at);
@@ -453,7 +450,11 @@ function assessSourceSessionHandoff(input) {
   if (input.requestReceiverAccess === true) {
     return closedResult("permission_denied");
   }
-  return acceptedResult();
+  const accepted = acceptedResult();
+  if (reconciliationCandidate) {
+    accepted.reconciled = true;
+  }
+  return accepted;
 }
 
 function attestedFrom(context) {
@@ -1059,6 +1060,102 @@ test("source-session-handoff reconciliation requires the complete authenticated 
     assert.equal(result.contextAccepted, false);
     assertNoSession(result);
   });
+});
+
+test("source-session-handoff reconciliation still runs semantic validation", async (t) => {
+  const redeemed = loadJson(CONTEXT_EXAMPLE);
+  function reconcile(overrides) {
+    return assessSourceSessionHandoff(presentationOf({
+      context: redeemed,
+      uncertain: true,
+      codeConsumed: true,
+      redeemedContext: structuredClone(redeemed),
+      attested: attestedFrom(redeemed),
+      ...overrides,
+    }));
+  }
+
+  await t.test("valid reconciliation does not mint a second session", () => {
+    const result = reconcile({});
+    assert.equal(result.failure, null);
+    assert.equal(result.reconciled, true);
+    assert.equal(result.contextAccepted, true);
+    assertNoSession(result);
+  });
+  await t.test("exact context at expiry is rejected", () => {
+    const result = reconcile({ at: redeemed.expires_at });
+    assert.equal(result.failure, "expired");
+    assert.equal(result.reconciled, false);
+    assert.equal(result.contextAccepted, false);
+    assertNoSession(result);
+  });
+  await t.test("revoked attestation is rejected", () => {
+    const result = reconcile({ revoked: true });
+    assert.equal(result.failure, "unverified");
+    assert.equal(result.reconciled, false);
+    assert.equal(result.contextAccepted, false);
+    assertNoSession(result);
+  });
+  await t.test("browser presentation is rejected", () => {
+    const result = reconcile({ presentation: "browser" });
+    assert.equal(result.failure, "identity_not_bound");
+    assert.equal(result.reconciled, false);
+    assert.equal(result.contextAccepted, false);
+    assertNoSession(result);
+  });
+  await t.test("source permission bounds do not grant receiver access", () => {
+    const result = reconcile({ requestReceiverAccess: true });
+    assert.equal(result.failure, "permission_denied");
+    assert.equal(result.reconciled, false);
+    assert.equal(result.contextAccepted, false);
+    assertNoSession(result);
+  });
+  await t.test("mismatched source permission attestation is rejected", () => {
+    const attested = attestedFrom(redeemed);
+    attested.source_permission_refs = ["source-permission-placeholder-999"];
+    const result = reconcile({ attested });
+    assert.equal(result.failure, "identity_not_bound");
+    assert.equal(result.reconciled, false);
+    assert.equal(result.contextAccepted, false);
+    assertNoSession(result);
+  });
+});
+
+test("source-session-handoff failure occurred_at must be a real UTC calendar day", async (t) => {
+  const validate = validatorFor(FAILURE_SCHEMA);
+  const base = loadJson(FAILURE_EXAMPLE);
+  assert.notEqual(parseUtc(base.occurred_at), null);
+  for (const item of manifest.source_session_handoff_v1_positive) {
+    if (!item.fixture.split("/").pop().startsWith("failure.")) {
+      continue;
+    }
+    const failure = loadJson(item.fixture);
+    assert.notEqual(parseUtc(failure.occurred_at), null, item.fixture);
+  }
+
+  function withOccurredAt(value) {
+    const failure = structuredClone(base);
+    failure.occurred_at = value;
+    return failure;
+  }
+
+  const cases = [
+    ["published example remains calendar-valid", base.occurred_at, true],
+    ["leap day 2024-02-29", "2024-02-29T00:00:00Z", true],
+    ["leap century 2000-02-29", "2000-02-29T23:59:59Z", true],
+    ["leap day 2028-02-29", "2028-02-29T00:00:00.1Z", true],
+    ["impossible 2026-02-30", "2026-02-30T00:00:00Z", false],
+    ["non-leap 2026-02-29", "2026-02-29T00:00:00Z", false],
+    ["non-leap century 1900-02-29", "1900-02-29T00:00:00Z", false],
+    ["impossible 2026-04-31", "2026-04-31T00:00:00Z", false],
+  ];
+  for (const [name, occurredAt, calendarValid] of cases) {
+    await t.test(name, () => {
+      const failure = withOccurredAt(occurredAt);
+      assert.equal(validate(failure), true, formatErrors(validate));
+      assert.equal(parseUtc(failure.occurred_at) !== null, calendarValid);
+    });
+  }
 });
 
 test("source-session-handoff dependency_unavailable never becomes success or an unscoped redirect", () => {
