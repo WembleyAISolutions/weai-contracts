@@ -82,6 +82,8 @@ Required fields: `contract_family`, `contract_version`, `profile`, `outcome`, `r
 
 `handoff_ref` is optional. `correlation_ref` remains required when no handoff reference has been assigned.
 
+`occurred_at` MUST be a calendar-valid UTC timestamp under the existing wire grammar. An impossible date, including 30 February and 29 February in a non-leap year, fails conformance even when the timestamp pattern matches.
+
 The object MUST NOT carry passwords, bearer tokens, authorization codes, PKCE verifiers, customer or order records, commercial amounts, signing secrets, diagnostic text, or membership and grant assertions. `additionalProperties: false` is the structural enforcement.
 
 ## 4. Field and ownership mapping
@@ -162,7 +164,7 @@ Schema validity is necessary and not sufficient. Conforming evaluation MUST appl
 2. If the peer `contract_family`, `contract_version`, or `profile` is not this published triple, the outcome is `unsupported_version`.
 3. If a record-scope array or `source_permission_refs` is empty, duplicated, wildcarded, not in ascending UTF-16 code-unit order, or contains a bound that is a proper prefix of another, or if context record scopes are not a subset of the initiation request, the outcome is `scope_invalid`.
 4. If the peer object otherwise fails schema validation, the outcome is `malformed`.
-5. If the code was already consumed, the outcome is `replayed`. An uncertain exchange may reconcile only the same complete authenticated context that was redeemed. A difference in any normative field fails closed as `replayed` and MUST NOT mint another receiver session.
+5. If the code was already consumed and this attempt is not an uncertain reconciliation of the same complete authenticated context, the outcome is `replayed`. Equality with the redeemed context only establishes a reconciliation candidate. That candidate MUST still pass the lifetime, revocation, binding, presentation, attestation, and source-bound rules below before acceptance. A difference in any normative field fails closed as `replayed` and MUST NOT mint another receiver session.
 6. If a lifetime is inverted, non-positive, or over the profile maximum, if context `issued_at` falls outside the initiation code window, or if the evaluation instant is at or after the context `expires_at`, the outcome is `expired`. An evaluation instant before `issued_at` fails closed as `unverified`. Elapse of the code window after a timely `issued_at` does not by itself expire the context. Lifetime comparison retains the full fractional-second precision of each timestamp and does not round. Exactly 60 seconds is within the code maximum, and exactly 300 seconds is within the context maximum. Any greater duration is expired.
 7. If issuer, audience, receiver, client, destination, handoff, transaction, or correlation binding does not match, or the issuer attestation is revoked, the outcome is `unverified`.
 8. If the presentation channel is not server-side redemption, the issuer attestation is absent, subject, organisation, account, role, permission bounds, `source_session_ref`, or `source_context_ref` differ from that attestation, or the two source references are not distinct, the outcome is `identity_not_bound`.
