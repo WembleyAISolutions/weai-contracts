@@ -29,7 +29,35 @@
       "type": "string",
       "minLength": 9,
       "pattern": "^https://[^\\s?#*]+$",
-      "description": "Structural screen for an exact registered https destination: scheme https, no whitespace, query, fragment, or asterisk. A nonempty host, no user information, a well-formed port, and a well-formed IPv6 literal are semantic conformance requirements. Exact binding is string equality and is not URL canonicalization."
+      "description": "Structural screen for an exact registered https destination: scheme https, no whitespace, query, fragment, or asterisk. Conformance parses the original string with a standards-compliant URL parser after explicit prechecks that reject user information, an empty or non-canonical port, a non-canonical IPv4 literal, a backslash, and any path the parser would rewrite. A nonempty host and a well-formed IPv6 literal, including an embedded IPv4 only in the final 32 bits, come from that parser. Empty path segments such as /a//callback remain valid. Exact binding is byte-for-byte equality of the original strings and is not URL canonicalization."
+    },
+    "pkceVerifier": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9\\-._~]{43,128}$",
+      "description": "RFC 7636 code verifier: ASCII unreserved characters, 43 to 128 characters. Server-side only. It is not a browser parameter and it is not durable browser state."
+    },
+    "pkceS256Challenge": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "description": "BASE64URL(SHA256(ASCII(code_verifier))) with no padding. The only challenge method in v1.0 is S256."
+    },
+    "browserState": {
+      "type": "string",
+      "minLength": 22,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9\\-._~]{22,128}$",
+      "description": "High-entropy opaque browser correlation of at least 128 bits. It is bound server-side to transaction_ref. It is not required to equal transaction_ref."
+    },
+    "authorizationCode": {
+      "type": "string",
+      "minLength": 22,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9\\-._~]+$",
+      "description": "Opaque single-use authorization code. The issuer MUST draw at least 128 bits from a cryptographically secure random generator. The maximum lifetime is 60 seconds."
     }
   }
 }

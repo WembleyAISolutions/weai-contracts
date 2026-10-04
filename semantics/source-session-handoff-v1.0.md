@@ -1,76 +1,155 @@
 # Source Session Handoff v1.0 — Normative Requirements
 
-Status: public compatibility baseline  
+Status: public implementation baseline  
 Contract family: `source-session-handoff`  
 Contract version: `v1.0`  
-Profile: `oauth2-authorization-code-pkce-s256-v1`
+Profile: `oauth2-authorization-code-pkce-s256-v1`  
+Redemption success shape: public option A, compact JWS authenticated context
 
-## 1. Purpose
+## 1. Parties and planes
 
-Source Session Handoff v1.0 is a public-safe wire contract for one handoff attempt from an issuing source to a receiving party.
+This family is the user-entry session handoff. The issuing source authenticates the user and attests the source context. The handoff runtime carries the protocol. The receiving party resolves its own identity, authority, and session after the context is issued.
 
-The profile is OAuth 2.0 Authorization Code with PKCE S256 only. This repository publishes the initiation, the issuer-attested context, and the closed failure. It does not publish an OAuth endpoint, a token response schema, or a receiver session.
+Two planes are distinct.
 
-A conforming object does not authenticate identity. It does not grant permission, role, membership, runtime admission, or access.
+A. User-entry session handoff. The receiver or runtime initiates OAuth 2.0 Authorization Code with PKCE S256. This document freezes that plane.
 
-## 2. Protocol semantics
+B. Source data plane. Programme, resource, claim, commercial, and event APIs, and any other machine-to-machine operational integration, are not this contract.
 
-The only contract direction is:
+`source-session-handoff` v1.0 does not define the Business Growth operational data gateway. It does not absorb any Business Growth operational API.
 
-`receiver initiation -> issuer attestation -> authenticated context or failure`
+`AgentBusinessLoadRequest` and `AgentBusinessLoadResult` are a distinct post-session receiver companion and loading contract. They are not initiation, authenticated context, OAuth authorization, receiver identity proof, or receiver authority. They MUST NOT establish source identity, establish receiver identity, replace this OAuth handoff, create a receiver session, or turn a source role into a receiver role. They may execute only after the receiving party has established receiver identity, authority, and session.
 
-Three wire objects are distinct:
+## 2. Direction
 
-1. `initiation` — the receiver's server-side request to start one handoff.
-2. `authenticated-context` — the issuer-attested bound produced only after server-side redemption.
-3. `failure` — a closed outcome when the attempt does not produce a usable source context.
+The only normative sequence is:
 
-Normative rules:
+1. Receiver or runtime initiation.
+2. Source authorization endpoint.
+3. Source session authentication or reuse.
+4. Authorization code.
+5. Server-side redemption and PKCE S256.
+6. Issuer-attested authenticated context.
+7. Receiver identity resolution.
+8. Receiver authority resolution.
+9. Receiver session establishment.
 
-1. Browser-authored identity, organisation, role, and scope are never trusted. Schema-valid JSON presented by the browser is not an issuer attestation.
-2. Integrity or hash equality is not authenticated identity. PKCE S256 proves verifier possession only inside the referenced OAuth profile. It does not identify a person or organisation and does not grant receiver access. Equality of opaque references is not identity either.
-3. Source references do not create receiver roles or permissions. `source_role_ref` and `source_permission_refs` are source-attested bounds only.
-4. Missing, empty, wildcard, ambiguous, expired, revoked, or mismatched context fails closed.
-5. Effective receiver access is determined later by both the source bounds and the receiver's current authority. This family does not perform that decision. Using source bounds alone is `permission_denied`.
-6. `dependency_unavailable` is never converted into success, an empty context, or an unscoped redirect.
+The source MUST NOT create a receiver session. Source role, permission, and membership values MUST NOT become receiver authority directly.
 
-The authorization code is opaque and single-use. It becomes unusable at the start of successful atomic redemption. An uncertain exchange may be queried or reconciled. Reconciliation MUST NOT create a second receiver session. This contract does not itself issue a receiver session.
-
-No identity, organisation, role, scope, authorization code, PKCE verifier, or token material is placed in redirect URLs or in persistent browser storage. The browser may retain only the opaque transaction correlation needed to match `transaction_ref`.
-
-Standard OAuth token responses are referenced by this profile and are not redefined here. The authenticated-context object is not an access token, refresh token, or identity token.
+A conforming object does not authenticate receiver identity. It does not grant permission, role, membership, runtime admission, or access.
 
 ## 3. Wire objects
 
-Each v1.0 wire object MUST be a JSON object with `additionalProperties: false`. Ad-hoc extension fields are forbidden. A future field requires a separately published compatible revision.
+Each v1.0 JSON object except the authorization callback is a closed object with `additionalProperties: false`. The authorization callback is two closed alternatives, success and denial, each with `additionalProperties: false`. Ad-hoc extension fields are forbidden.
+
+Published objects:
+
+1. `initiation` — server-side start of one handoff. It MUST NOT be copied wholesale into browser-visible parameters.
+2. `authorization-request` — closed request sent toward the source authorization endpoint.
+3. `authorization-response` — browser callback of `code` and `state`, or one safe OAuth error and `state`.
+4. `redemption-request` — server-to-server redemption. It is not a browser object.
+5. `redemption-response` — closed success body. Public option A. Failure uses the public failure object.
+6. `authenticated-context` — the JSON payload of the compact JWS. It is the only claim vocabulary.
+7. `trusted-source-registration` — public verification material.
+8. `failure` — closed machine failure. It is not placed in the browser URL.
 
 Unsupported `contract_family`, `contract_version`, or `profile` values fail closed as `unsupported_version`. The failure object that reports that outcome is itself `source-session-handoff` / `v1.0` / `oauth2-authorization-code-pkce-s256-v1`.
 
-### 3.1 Initiation
+Browser-authored identity, organisation, role, and scope are never trusted. Integrity or hash equality is not authenticated identity. PKCE S256 proves verifier possession only. It does not identify a person or organisation and does not grant receiver access.
 
-Required fields: `contract_family`, `contract_version`, `profile`, `handoff_ref`, `issuer`, `receiver_ref`, `client_ref`, `destination_uri`, `transaction_ref`, `nonce_ref`, `requested_record_scope_refs`, `initiated_at`, `expires_at`, `correlation_ref`.
+## 4. Initiation
 
-`requested_record_scope_refs` MUST be a non-empty array of unique bounds. A wildcard asterisk, whitespace, and duplicates are schema-invalid. A bound that is a proper UTF-16 prefix of another bound in the same array is ambiguous and fails closed as `scope_invalid` even when the schema accepts the strings.
+Required fields: `contract_family`, `contract_version`, `profile`, `purpose`, `handoff_ref`, `issuer`, `receiver_ref`, `client_ref`, `destination_uri`, `transaction_ref`, `nonce_ref`, `requested_record_scope_refs`, `initiated_at`, `expires_at`, `correlation_ref`.
 
-`expires_at` MUST be strictly later than `initiated_at`, and the duration MUST be no greater than 60 seconds. That window is the authorization-code lifetime for the attempt.
+`purpose` is an opaque string compared by exact equality across initiation, authorization request, redemption request, authenticated context, and trusted-source registration.
+
+`requested_record_scope_refs` MUST be a non-empty array of unique bounds. A wildcard asterisk, whitespace, and duplicates are schema-invalid. A bound that is a proper UTF-16 prefix of another bound in the same array is ambiguous and fails closed as `scope_invalid` even when the schema accepts the strings. An empty array is the empty-set case and is `scope_invalid`. A numeric, empty-string, or other structurally illegal element is `malformed`, not `scope_invalid`.
+
+`expires_at` MUST be strictly later than `initiated_at`, and the duration MUST be no greater than 60 seconds. That window is the authorization-code lifetime. The code window maximum remains 60 seconds.
 
 `initiated_at` and `expires_at` MUST each be a calendar-valid instant in the proleptic Gregorian calendar for years 0000 through 9999. Comparison uses the whole-second civil day count and the exact fractional digit string. It does not use a host date library, does not apply a 0–99 year offset, and does not truncate or round fractional seconds.
 
-`destination_uri` MUST satisfy the destination rules in section 4. The structural schema pattern is only a screen for the `https` scheme and the absence of whitespace, query, fragment, and asterisk. A nonempty host, the absence of user information, a well-formed port, and a well-formed IPv6 literal are semantic conformance requirements.
+`destination_uri` MUST satisfy section 8. The structural schema pattern is only a screen.
 
-### 3.2 Authenticated context
+## 5. Authorization request and response
 
-Required fields: `contract_family`, `contract_version`, `profile`, `handoff_ref`, `transaction_ref`, `issuer`, `audience`, `receiver_ref`, `client_ref`, `subject_ref`, `source_session_ref`, `source_context_ref`, `organisation_ref`, `account_ref`, `record_scope_refs`, `source_role_ref`, `source_permission_refs`, `destination_uri`, `issued_at`, `expires_at`, `correlation_ref`.
+### 5.1 Authorization request
 
-`subject_ref` is issuer-scoped. `organisation_ref` and `account_ref` are issuer-scoped references. `source_session_ref` and `source_context_ref` are opaque source references and MUST be distinct.
+Required fields: `contract_family`, `contract_version`, `profile`, `response_type` = `code`, `client_ref`, `receiver_ref`, `destination_uri`, `state`, `code_challenge`, `code_challenge_method` = `S256`, `handoff_ref`, `transaction_ref`, `correlation_ref`, `purpose`.
+
+On the authorization redirect, query parameter names are these field names. This profile does not rename `destination_uri`.
+
+`state` is an independent high-entropy opaque browser correlation. The runtime binds it server-side to `transaction_ref`. `state` MUST NOT be required to equal `transaction_ref`.
+
+The PKCE verifier uses the RFC 7636 verifier grammar: ASCII unreserved characters, 43 to 128 characters. The challenge is `BASE64URL(SHA256(ASCII(verifier)))` with no padding. `plain` is rejected.
+
+The authorization request MUST NOT carry, and the browser MUST NOT be shown:
+
+- subject identity
+- organisation or account identity
+- source session or source context references
+- source role or source permissions
+- record scopes
+- receiver role, membership, or grant
+- the PKCE verifier
+- tokens or assertions
+
+### 5.2 Authorization response
+
+Success fields are only `code` and `state`. Denial fields are only one safe OAuth error and `state`.
+
+The safe error enum is `invalid_request`, `unauthorized_client`, `access_denied`, `unsupported_response_type`, `server_error`, `temporarily_unavailable`.
+
+The callback carries no identity, role, scope, context, destination, or verifier fields.
+
+The authorization code is opaque, drawn from a cryptographically secure generator with at least 128 bits of entropy, single-use, and limited to a maximum lifetime of 60 seconds.
+
+If the client or the destination is not trusted, do not redirect the browser to the supplied destination. When a safe registered redirect is already established, browser denial may use only a safe OAuth error and `state`. Do not expose internal machine diagnostics or identity state in URL parameters.
+
+## 6. Redemption
+
+### 6.1 Redemption request
+
+This object is server-to-server only. Required fields: `contract_family`, `contract_version`, `profile`, `grant_type` = `authorization_code`, `client_ref`, `destination_uri`, `authorization_code`, `code_verifier`, `handoff_ref`, `transaction_ref`, `correlation_ref`, `purpose`.
+
+The issuer MUST atomically validate the authorization-code record against the client, the exact destination, the S256 challenge, the handoff, the transaction, the correlation, the purpose, expiry, one-time-use status, and the bound source session and context. The code record is source-server internal state. It binds the authenticated source user, session, and context established at authorization time. The code becomes unusable at the start of successful atomic redemption.
+
+### 6.2 Redemption response — public option A
+
+The closed success response is:
+
+- `contract_family`, `contract_version`, `profile`
+- `status` = `issued`
+- `token_type` = `Bearer`
+- `assertion_format` = `compact-jws-authenticated-context-v1`
+- `assertion`
+- `expires_in`
+
+`assertion` is a compact JWS. Its payload is exactly one public authenticated-context v1.0 JSON object. v1.0 does not define a second claim vocabulary. It does not require duplicate private runtime claims such as simultaneous `iss` and `issuer`, `aud` and `audience`, `sub` and `subject_ref`, or `client_id` and `client_ref`.
+
+The protected header requires `alg` and `kid` and no other members. `alg` MUST be one of `RS256`, `RS384`, `RS512`, `ES256`, `ES384`, `ES512`, `EdDSA` and MUST be permitted by the trusted-source registration. Reject `alg` = `none`, a caller-controlled `jku`, an embedded caller `jwk`, `x5u`, `x5c`, and any critical header.
+
+`expires_in` is the exact whole-second authenticated-context lifetime, an integer from 1 through 300. If the context timestamps do not describe an integral-second lifetime matching `expires_in`, the redemption response is invalid.
+
+Failure uses the public failure object. It does not use an alternate private token-error object. `refresh_token` is forbidden in v1.0. Unknown fields are rejected.
+
+## 7. Authenticated context
+
+Required fields: `contract_family`, `contract_version`, `profile`, `purpose`, `handoff_ref`, `transaction_ref`, `correlation_ref`, `issuer`, `audience`, `receiver_ref`, `client_ref`, `subject_ref`, `source_session_ref`, `source_context_ref`, `organisation_ref`, `account_ref`, `record_scope_refs`, `source_role_ref`, `source_permission_refs`, `destination_uri`, `issued_at`, `expires_at`.
+
+`subject_ref` is issuer-scoped. `source_session_ref` and `source_context_ref` MUST be distinct. The context MUST NOT outlive the source session from which it was issued.
+
+`source_role_ref` and `source_permission_refs` are source bounds only. They do not grant receiver role, membership, grant, permission, tenant authority, admission, or session.
+
+The maximum lifetime is 5 minutes. Allowed clock skew in v1.0 is 0 seconds. An evaluation instant before `issued_at` is `unverified`. An evaluation instant at or after `expires_at` is `expired`.
 
 `record_scope_refs` and `source_permission_refs` use the same non-empty, unique, no-wildcard rule as initiation scopes. On the wire they MUST be sorted in ascending UTF-16 code-unit order.
 
-`expires_at` MUST be strictly later than `issued_at`, and the duration MUST be no greater than 5 minutes. No refresh token exists in v1.0. `issued_at` and `expires_at` use the same calendar-valid UTC instant rules as initiation timestamps. `destination_uri` uses the same destination rules as initiation.
+`issued_at` and `expires_at` use the same calendar-valid UTC instant rules as initiation. No refresh token exists in v1.0.
 
 A bound pair with an initiation MUST satisfy all of the following by exact string equality:
 
-- `contract_family`, `contract_version`, and `profile`;
+- `contract_family`, `contract_version`, `profile`, and `purpose`;
 - `handoff_ref`, `transaction_ref`, `issuer`, `receiver_ref`, `client_ref`, `destination_uri`, and `correlation_ref`;
 - `audience` equals the initiation `receiver_ref`;
 - every `record_scope_refs` item is a member of `requested_record_scope_refs`;
@@ -78,109 +157,143 @@ A bound pair with an initiation MUST satisfy all of the following by exact strin
 
 A context issued inside the code window remains eligible until its own `expires_at`. Elapse of the code window does not truncate that context lifetime.
 
-Issuer mismatch is an issuer mix-up and is `unverified`. Audience, receiver, client, and destination mismatches are `unverified`.
+Issuer mismatch is `unverified` and machine code `ISSUER_MISMATCH`. Audience mismatch is `unverified` and machine code `AUDIENCE_MISMATCH`. Receiver, client, and destination mismatches are `unverified`. Purpose mismatch is `unverified` and machine code `PURPOSE_MISMATCH`.
 
-### 3.3 Failure
+## 8. Destination and redirect
 
-Required fields: `contract_family`, `contract_version`, `profile`, `outcome`, `retryable`, `correlation_ref`, `occurred_at`.
+A destination is validated in two steps. First, reject the original string when it contains whitespace, a control character, a backslash, an asterisk, a query, or a fragment, or when the authority has user information, an empty port, a non-canonical port, or a non-canonical IPv4 literal. Second, parse that same original string with a standards-compliant URL parser. The parser accepts a nonempty host and a well-formed IPv6 literal. An embedded IPv4 is accepted only in the legal final 32-bit position; any other embedded IPv4 is rejected by the parser. A path the parser would rewrite, including dot segments, is rejected. A path with empty segments, including `/a//callback`, is valid. A legitimate port, including an explicit port that a parser would omit from its serialized form, is valid.
 
-`handoff_ref` is optional. `correlation_ref` remains required when no handoff reference has been assigned.
+IPv6 syntax is the parser's syntax. This contract does not publish a partial IPv6 grammar.
 
-`occurred_at` MUST be a calendar-valid UTC timestamp under the existing wire grammar, using the same proleptic Gregorian instant rules as initiation and authenticated context. An impossible date, including 30 February and 29 February in a non-leap year, makes the failure object non-conformant even when the timestamp pattern matches. Schema acceptance of the failure object is not conformance.
+After syntactic validation, registered destination matching is byte-for-byte equality of the original strings. No canonicalisation is applied before that comparison. Host case, an explicit port, and IPv6 spelling are significant.
 
-The object MUST NOT carry passwords, bearer tokens, authorization codes, PKCE verifiers, customer or order records, commercial amounts, signing secrets, diagnostic text, or membership and grant assertions. `additionalProperties: false` is the structural enforcement.
+The same syntax applies to `authorization_endpoint` and `token_endpoint`.
 
-## 4. Field and ownership mapping
+## 9. Browser persistence
 
-| Field | Objects | Owner | Comparison | Does not mean |
-| --- | --- | --- | --- | --- |
-| `contract_family` | all | contract | constant `source-session-handoff` | a product or deployment |
-| `contract_version` | all | contract | constant `v1.0` | compatibility with any other family |
-| `profile` | all | contract | constant `oauth2-authorization-code-pkce-s256-v1` | a token response schema |
-| `handoff_ref` | all, optional on failure | receiver, then shared | exact string | a receiver session |
-| `issuer` | initiation, context | issuer identifier | exact string against the initiation | a fetched metadata document |
-| `audience` | context | issuer, naming the receiver | exact string against initiation `receiver_ref` | authenticated identity or access |
-| `receiver_ref` | initiation, context | agreed receiving party | exact string | a receiver role |
-| `client_ref` | initiation, context | receiver client registration | exact string | a client secret or access grant |
-| `destination_uri` | initiation, context | pre-registered redirect | exact string after each value independently satisfies the https destination rules | a browser-rewritten location |
-| `transaction_ref` | initiation, context | receiver correlation | exact string against browser-bound state | the raw state value |
-| `nonce_ref` | initiation | receiver correlation | opaque reference | the raw nonce |
-| `requested_record_scope_refs` | initiation | receiver request | non-empty unique explicit bounds | receiver authorization |
-| `subject_ref` | context | issuer-scoped subject | exact string against the issuer attestation | a receiver account |
-| `source_session_ref` | context | issuer | exact string; distinct from `source_context_ref` | a receiver session |
-| `source_context_ref` | context | issuer | exact string | a receiver context store |
-| `organisation_ref` | context | issuer | exact string against the issuer attestation | receiver membership |
-| `account_ref` | context | issuer | exact string against the issuer attestation | a receiver account grant |
-| `record_scope_refs` | context | issuer | non-empty subset of the initiation request | receiver authorization |
-| `source_role_ref` | context | issuer | source-attested bound only | a receiver role |
-| `source_permission_refs` | context | issuer | source-attested bounds only | receiver permissions |
-| `initiated_at` | initiation | receiver clock input | start of the 60-second code window | a refresh lifetime |
-| `issued_at` | context | issuer clock input | inside the initiation code window | a receiver session start |
-| `expires_at` | initiation, context | window end | 60 seconds for the code; 5 minutes for the context | a refresh token |
-| `correlation_ref` | all | receiver | exact string across the attempt | a credential |
-| `outcome` | failure | receiver classification | closed vocabulary | success |
-| `retryable` | failure | matrix | true only for `dependency_unavailable` | a second redemption |
-| `occurred_at` | failure | receiver clock input | calendar-valid UTC instant; an impossible date is non-conformant | a diagnostic payload |
+The browser MUST NOT persist:
 
-Opaque references are JSON strings with `minLength: 1`. This contract MUST NOT impose prefixes, UUIDs, product names, or hostnames. Resolution is out of scope.
+- subject, organisation, or account identity
+- source role or source permissions
+- record scope
+- source session or source context references
+- the PKCE verifier
+- the authenticated-context assertion or token
+- receiver authority
 
-Timestamps use the v1.0 UTC grammar: `Z` only, no numeric offset, no leap-second `60`, years 0000 through 9999. Calendar validity is a conformance requirement for every timestamp on initiation, authenticated context, and failure. Instant order and duration use integer whole seconds plus the exact fractional digit string.
+These values MUST NOT be written to `localStorage` or any equivalent durable browser state.
 
-A destination is an absolute URI with the exact scheme `https`, a nonempty ASCII DNS name, IPv4 address, or IPv6 literal, an optional decimal port from 0 through 65535, and an optional path. It has no user information, query, fragment, asterisk, whitespace, control character, or raw backslash. Percent-encoding is not decoded, and a default port is not inserted or removed. Exact registered destination comparison is string equality of two values that each passed these rules. The JSON Schema pattern does not express this grammar; executable conformance does.
+The authorization code may appear transiently in the OAuth callback query only. The receiver callback flow MUST consume it on the server immediately and remove it from the user-visible URL. The PKCE verifier remains server-side.
 
-## 5. Profile sequence
+## 10. Trusted-source registration
 
-Profile `oauth2-authorization-code-pkce-s256-v1` proceeds in this order.
+Required public fields: `registration_version`, `issuer`, `client_ref`, `receiver_ref`, `purpose`, `allowed_contract_versions`, `allowed_profiles`, `authorization_endpoint`, `token_endpoint`, `destination_uris`, `status` (`enabled`, `disabled`, or `revoked`), `algorithms`, and public `jwks`. `environment` is optional.
 
-1. The receiver registers one exact destination URI for `client_ref`. Wildcard redirect URIs are not part of this profile.
-2. The receiver builds one initiation object. The code window is at most 60 seconds. The initiation object is not placed in the browser redirect or in persistent browser storage.
-3. The browser is sent to the issuer authorization interaction with the registered client, PKCE S256 only, the exact destination URI, and opaque state bound to `transaction_ref`. The raw PKCE verifier is not included. Identity, organisation, role, and scope payloads are not included.
-4. The issuer authenticates the subject under its own rules. That authentication is not defined here.
-5. The issuer returns the browser to the exact `destination_uri` with an opaque single-use authorization code and the state value. The code lifetime is at most 60 seconds. This contract does not redefine that OAuth redirect.
-6. The receiver's server compares the returned state with `transaction_ref` and the expected issuer with `issuer` before redemption. A mismatch is `unverified`.
-7. The receiver's server redeems the code. Redemption is server-side only. PKCE `plain` is unsupported and fails closed. The verifier is not written to these wire objects, to the redirect, or to persistent browser storage.
-8. At the start of successful atomic redemption the code becomes unusable. The issuer's standard token response is consumed as defined by the referenced OAuth specification and is not stored as this family's wire object. The receiver then holds at most one authenticated-context object. Its lifetime is at most 5 minutes. v1.0 has no refresh token.
-9. If the exchange result is uncertain, the receiver may query or reconcile with `handoff_ref` and `transaction_ref`. Reconciliation MUST return the original context or a failure. It MUST NOT redeem again in a way that creates a second receiver session.
-10. Any failed check emits one failure object. `dependency_unavailable` may be retried for reconciliation of the same attempt only.
+The permitted algorithm set is `RS256`, `RS384`, `RS512`, `ES256`, `ES384`, `ES512`, and `EdDSA`. Registration MUST NOT allow any other algorithm.
 
-## 6. Frozen transport rules
+Registration contains public verification material only. It MUST NOT contain receiver role, receiver membership, grant, permission, receiver session authority, private JWK material, or a source or client secret. Caller-supplied key URLs are not trust. `jku`, `x5u`, and embedded private parameters are rejected.
 
-This profile freezes the following. A different transport requires a separately published profile or contract revision.
+`status` `disabled` is machine code `CLIENT_DISABLED`. `revoked` is `CLIENT_REVOKED`. A client that is not the registered client is `UNKNOWN_CLIENT`. Each of those results forbids redirect to the supplied destination.
 
-- OAuth 2.0 Authorization Code;
-- PKCE S256 only;
-- exact registered redirect URI;
-- browser-bound state and transaction correlation;
-- issuer mix-up defence by exact issuer equality;
-- opaque single-use authorization code;
-- code lifetime no greater than 60 seconds;
-- server-side redemption only;
-- access and context lifetime no greater than 5 minutes;
-- no refresh token in v1.0;
-- the code becomes unusable at the start of successful atomic redemption;
-- uncertain exchange may be queried or reconciled and MUST NOT create a second receiver session;
-- no identity or scope payload in redirect URLs or persistent browser storage;
-- standard OAuth token responses are referenced, not redefined.
+## 11. Failure object
 
-## 7. Semantic invariants and precedence
+Required fields: `contract_family`, `contract_version`, `profile`, `outcome`, `code`, `retryable`, `correlation_ref`, `occurred_at`. `handoff_ref` is optional.
 
-Schema validity is necessary and not sufficient. Conforming evaluation MUST apply the first matching rule:
+`outcome` remains the high-level class. `code` is the stable machine code and determines `outcome` and `retryable`. The executable matrix is `vocab/source-session-handoff-failure-v1.0.json`.
 
-1. If a required dependency cannot be reached, the outcome is `dependency_unavailable`, `retryable` true, with no accepted context, no empty scope, no unscoped redirect, and no receiver session.
-2. If the peer `contract_family`, `contract_version`, or `profile` is not this published triple, the outcome is `unsupported_version`.
-3. If a record-scope array or `source_permission_refs` is empty, duplicated, wildcarded, not in ascending UTF-16 code-unit order, or contains a bound that is a proper prefix of another, or if context record scopes are not a subset of the initiation request, the outcome is `scope_invalid`.
-4. If the peer object otherwise fails schema validation, a timestamp on either peer object or the evaluation instant is not a calendar-valid UTC instant, or `destination_uri` fails the section 4 destination rules, the outcome is `malformed`.
-5. If the code was already consumed and this attempt is not an uncertain reconciliation of the same complete authenticated context, the outcome is `replayed`. Equality with the redeemed context only establishes a reconciliation candidate. That candidate MUST still pass the lifetime, revocation, binding, presentation, attestation, and source-bound rules below before acceptance. A difference in any normative field fails closed as `replayed` and MUST NOT mint another receiver session.
-6. If a lifetime is inverted, non-positive, or over the profile maximum, if context `issued_at` falls outside the initiation code window, or if the evaluation instant is at or after the context `expires_at`, the outcome is `expired`. An evaluation instant before `issued_at` fails closed as `unverified`. Elapse of the code window after a timely `issued_at` does not by itself expire the context. Lifetime comparison retains the full fractional-second precision of each timestamp and does not round. Exactly 60 seconds is within the code maximum, and exactly 300 seconds is within the context maximum. Any greater duration is expired.
-7. If issuer, audience, receiver, client, destination, handoff, transaction, or correlation binding does not match, or the issuer attestation is revoked, the outcome is `unverified`.
-8. If the presentation channel is not server-side redemption, the issuer attestation is absent, subject, organisation, account, role, permission bounds, `source_session_ref`, or `source_context_ref` differ from that attestation, or the two source references are not distinct, the outcome is `identity_not_bound`.
-9. If a caller treats the source role or source permission bounds as receiver access, the outcome is `permission_denied`.
+`occurred_at` MUST be a calendar-valid UTC timestamp. An impossible date, including 30 February and 29 February in a non-leap year, makes the failure object non-conformant even when the timestamp pattern matches.
 
-A source context that passes rules 1–8 is still not receiver access. Receiver current authority is a later decision. This family does not mint a receiver session on acceptance, replay, reconciliation, or dependency failure.
+The object MUST NOT carry passwords, bearer tokens, authorization codes, PKCE verifiers, customer or order records, commercial amounts, signing secrets, diagnostic text, or membership and grant assertions.
 
-## 8. Failure and retry matrix
+## 12. Field ownership
 
-The executable matrix is `vocab/source-session-handoff-failure-v1.0.json`. The schema enum and `retryable` constants MUST match it.
+| Field | Objects | Comparison | Does not mean |
+| --- | --- | --- | --- |
+| `purpose` | initiation, authorization request, redemption request, context, registration | exact string | an operational data API |
+| `state` | authorization request and response | server-side binding to `transaction_ref` | equality with `transaction_ref` |
+| `code_challenge` | authorization request | S256 of the server-side verifier | the verifier itself |
+| `code_verifier` | redemption request | RFC 7636, server-side only | a browser parameter |
+| `authorization_code` / `code` | redemption request / callback | opaque, single-use, at least 128 bits, at most 60 seconds | a receiver session |
+| `assertion` | redemption response | compact JWS of one authenticated context | a second claim set or a refresh token |
+| `expires_in` | redemption response | exact integral seconds, 1 through 300 | a lifetime with clock skew |
+| `source_role_ref` | context | source bound only | a receiver role |
+| `source_permission_refs` | context | source bounds only | receiver permissions |
+| `destination_uri` | initiation, authorization, redemption, context, registration | byte-for-byte after syntax validation | a canonicalized URL |
+
+Opaque references are JSON strings with `minLength: 1`. This contract MUST NOT impose prefixes, UUIDs, product names, or hostnames.
+
+Timestamps use the v1.0 UTC grammar: `Z` only, no numeric offset, no leap-second `60`, years 0000 through 9999. Instant order and duration use integer whole seconds plus the exact fractional digit string.
+
+## 13. Semantic invariants and precedence
+
+Schema validity is necessary and not sufficient. Conforming evaluation of a bound initiation and authenticated context MUST apply the first matching rule:
+
+1. If a required dependency cannot be reached, the outcome is `dependency_unavailable`, `retryable` true, with no accepted context, no empty scope, no unscoped redirect, and no receiver session. Issuer unavailability uses machine code `ISSUER_UNAVAILABLE`. Any other such dependency uses `DEPENDENCY_UNAVAILABLE`.
+2. If the peer `contract_family`, `contract_version`, or `profile` is not this published triple, the outcome is `unsupported_version`. Machine code `UNSUPPORTED_PROFILE` or `UNSUPPORTED_CONTRACT_VERSION` applies when that is the defect.
+3. If a scope or permission element is structurally illegal — not a string, an empty string, or whitespace — the outcome is `malformed`. This classification precedes semantic scope classification.
+4. If a record-scope array or `source_permission_refs` is an empty set, duplicated, wildcarded, not in ascending UTF-16 code-unit order, or contains a bound that is a proper prefix of another, or if context record scopes are not a subset of the initiation request, the outcome is `scope_invalid` and the machine code is `RECORD_SCOPE_INVALID`.
+5. If the peer object otherwise fails schema validation, a timestamp is not a calendar-valid UTC instant, or `destination_uri` fails section 8, the outcome is `malformed`.
+6. If the code was already consumed and this attempt is not an uncertain reconciliation of the same complete authenticated context, the outcome is `replayed`. Reconciliation MUST still pass the lifetime, revocation, binding, presentation, attestation, and source-bound rules below. A difference in any normative field fails closed as `replayed` and MUST NOT mint another receiver session.
+7. If a lifetime is inverted, non-positive, or over the profile maximum, if context `issued_at` falls outside the initiation code window, if the context outlives the source session, or if the evaluation instant is at or after the context `expires_at`, the outcome is `expired`. Allowed clock skew is 0 seconds. An evaluation instant before `issued_at` is `unverified`. Elapse of the code window after a timely `issued_at` does not by itself expire the context. Lifetime comparison retains full fractional-second precision. Exactly 60 seconds is within the code maximum. Exactly 300 seconds is within the context maximum. Any greater duration is expired.
+8. If issuer, audience, receiver, client, destination, handoff, transaction, correlation, or purpose binding does not match, or the issuer attestation is revoked, the outcome is `unverified`.
+9. If the presentation channel is not server-side redemption, the issuer attestation is absent, subject, organisation, account, role, permission bounds, `source_session_ref`, or `source_context_ref` differ from that attestation, or the two source references are not distinct, the outcome is `identity_not_bound`.
+10. If a caller treats the source role or source permission bounds as receiver access, the outcome is `permission_denied`.
+
+A source context that passes these rules is still not receiver access. This family does not mint a receiver session on acceptance, replay, reconciliation, or dependency failure.
+
+Redemption of an authorization code applies the first matching machine code:
+
+1. `ISSUER_UNAVAILABLE` or `DEPENDENCY_UNAVAILABLE`
+2. `UNSUPPORTED_PROFILE` or `UNSUPPORTED_CONTRACT_VERSION`
+3. `MALFORMED_REQUEST`
+4. `INVALID_PKCE_METHOD`
+5. `UNKNOWN_CLIENT`, `CLIENT_DISABLED`, or `CLIENT_REVOKED`
+6. `DESTINATION_MISMATCH`
+7. `CODE_UNKNOWN`
+8. `CODE_EXPIRED`
+9. `CODE_REPLAYED`
+10. `PKCE_MISMATCH`
+11. `PURPOSE_MISMATCH`, `HANDOFF_MISMATCH`, `TRANSACTION_MISMATCH`, or `CORRELATION_MISMATCH`
+12. `SOURCE_ROLE_CONTEXT_INVALID` when the code record has no distinct bound source session and source context
+
+Only a record that passes every atomic check is consumed. Consumption is single-use.
+
+## 14. Failure and retry matrix
+
+Only `ISSUER_UNAVAILABLE` and `DEPENDENCY_UNAVAILABLE` are automatic-machine retryable. `SOURCE_AUTHENTICATION_REQUIRED` needs user action and is not automatic-machine retryable.
+
+`safe_browser_behavior` `do_not_redirect` means the browser is not sent to the supplied destination. `safe_oauth_error_and_state` is allowed only after a safe registered redirect is already established, and the query is only the safe OAuth error plus `state`. `user_action_required` is source authentication, not a machine retry. `retry_same_attempt_no_unscoped_redirect` reconciles the same attempt and never becomes success, an empty context, or an unscoped redirect.
+
+| Code | Outcome | Retryable | Browser |
+| --- | --- | --- | --- |
+| `SOURCE_AUTHENTICATION_REQUIRED` | `identity_not_bound` | false | user action |
+| `UNKNOWN_CLIENT` | `unverified` | false | do not redirect |
+| `CLIENT_DISABLED` | `unverified` | false | do not redirect |
+| `CLIENT_REVOKED` | `unverified` | false | do not redirect |
+| `DESTINATION_MISMATCH` | `unverified` | false | do not redirect |
+| `UNSUPPORTED_PROFILE` | `unsupported_version` | false | safe OAuth error and state |
+| `UNSUPPORTED_CONTRACT_VERSION` | `unsupported_version` | false | safe OAuth error and state |
+| `INVALID_PKCE_METHOD` | `malformed` | false | safe OAuth error and state |
+| `PKCE_MISMATCH` | `unverified` | false | safe OAuth error and state |
+| `CODE_EXPIRED` | `expired` | false | safe OAuth error and state |
+| `CODE_REPLAYED` | `replayed` | false | safe OAuth error and state |
+| `CODE_UNKNOWN` | `unverified` | false | safe OAuth error and state |
+| `SOURCE_ACCOUNT_DISABLED` | `permission_denied` | false | safe OAuth error and state |
+| `ORGANISATION_MISMATCH` | `unverified` | false | safe OAuth error and state |
+| `RECORD_SCOPE_INVALID` | `scope_invalid` | false | safe OAuth error and state |
+| `SOURCE_ROLE_CONTEXT_INVALID` | `identity_not_bound` | false | safe OAuth error and state |
+| `MALFORMED_REQUEST` | `malformed` | false | safe OAuth error and state |
+| `MALFORMED_REDEMPTION_RESPONSE` | `malformed` | false | safe OAuth error and state |
+| `MALFORMED_AUTHENTICATED_CONTEXT` | `malformed` | false | safe OAuth error and state |
+| `ISSUER_MISMATCH` | `unverified` | false | safe OAuth error and state |
+| `AUDIENCE_MISMATCH` | `unverified` | false | safe OAuth error and state |
+| `CONTEXT_EXPIRED` | `expired` | false | safe OAuth error and state |
+| `PURPOSE_MISMATCH` | `unverified` | false | safe OAuth error and state |
+| `HANDOFF_MISMATCH` | `unverified` | false | safe OAuth error and state |
+| `TRANSACTION_MISMATCH` | `unverified` | false | safe OAuth error and state |
+| `CORRELATION_MISMATCH` | `unverified` | false | safe OAuth error and state |
+| `ISSUER_UNAVAILABLE` | `dependency_unavailable` | true | retry the same attempt, no unscoped redirect |
+| `DEPENDENCY_UNAVAILABLE` | `dependency_unavailable` | true | retry the same attempt, no unscoped redirect |
 
 | Outcome | Retryable | Required result |
 | --- | --- | --- |
@@ -194,9 +307,11 @@ The executable matrix is `vocab/source-session-handoff-failure-v1.0.json`. The s
 | `unsupported_version` | false | Do not negotiate an unpublished version or profile. |
 | `dependency_unavailable` | true | Reconcile the same attempt only. Never success, empty context, or an unscoped redirect. |
 
-Every failure carries `correlation_ref` and `occurred_at`. `handoff_ref` is included only when the attempt already has one. No sensitive diagnostic material is permitted.
+## 15. Companion load boundary
 
-## 9. Compatibility note
+`AgentBusinessLoadRequest` / `AgentBusinessLoadResult` is not source-session-handoff initiation, not an authorization request, and not an authenticated context. It is a receiver post-session companion and loading contract. It MUST NOT establish source identity, establish receiver identity, replace OAuth handoff, create a receiver session, or turn a source role into a receiver role. It may execute only after receiver identity, authority, and session have been established by the receiver.
+
+## 16. Compatibility
 
 Source Session Handoff v1.0 is additive. It does not revise frozen v0.1, frozen v0.2, or professional-authority-evidence v1.0.
 
@@ -206,55 +321,41 @@ Selection is explicit:
 - `contract_version` = `v1.0`
 - `profile` = `oauth2-authorization-code-pkce-s256-v1`
 
-`v1.0` on another family is a different contract. A missing, unknown, or newer version or profile fails closed as `unsupported_version`. Implementations MUST NOT treat a later revision as a silent replacement.
+Within this published triple, `additionalProperties` is false on every wire object. Removing, renaming, or redefining a field, constant, outcome, machine code, or lifetime maximum is breaking and requires a new published revision.
 
-Within this published triple:
-
-- `additionalProperties` is false on every wire object;
-- ad-hoc extension fields are forbidden;
-- removing, renaming, or redefining a field, constant, outcome, or lifetime maximum is breaking and requires a new published revision;
-- an additional field, outcome, or profile requires a separately published compatible revision before use.
-
-This family is not an execution request, a status result, an error-denial object, or a professional-authority evidence object. It MUST NOT be wrapped into those shapes to simulate compatibility.
+This family is not an execution request, a status result, an error-denial object, a professional-authority evidence object, or a Business Growth operational API.
 
 A valid schema does not authenticate identity and does not grant permission, role, membership, runtime admission, or access.
 
-## 10. Out of scope
+## 17. Out of scope
 
-This repository does not implement cryptographic verification, OAuth endpoints, token issuance, session issuance, storage, HTTP services, or product adapters.
+This repository does not implement OAuth endpoints, token issuance, session issuance, storage, HTTP services, or product adapters. Cryptographic verification uses the public JWKS in trusted-source registration; private keys are not published.
 
-Private topology, internal trust configuration, private keys, secrets, hostnames, and enforcement implementation are out of scope.
+The wire objects MUST NOT carry passwords, native source bearer tokens other than the option A assertion on the server-side redemption response, the PKCE verifier on any browser object, raw customer or order records, commercial amounts, or source signing secrets.
 
-The wire objects MUST NOT carry passwords, native source bearer tokens, authorization codes, the PKCE verifier, raw customer or order records, commercial amounts, or source signing secrets.
-
-## 11. Conformance
+## 18. Conformance
 
 `npm test` validates this family together with frozen v0.1, v0.2, and professional-authority-evidence v1.0.
 
-Minimum coverage:
+Minimum coverage includes valid initiation, authorization request, authorization callback, redemption request, redemption response, signed authenticated-context payload structure, trusted-source registration, exact destination matching, a double-slash path, malformed IPv6 and illegal embedded IPv4, PKCE S256, PKCE plain rejection, PKCE mismatch, one-time, expired, replayed, and unknown codes, wrong, disabled, and revoked clients, wrong issuer, audience, purpose, profile, and contract version, malformed request, redemption response, and authenticated context, context lifetime over 5 minutes, refresh token rejection, unknown fields on every closed object, source role distinct from receiver role, browser-sensitive field prohibition, a callback of only safe fields, structurally illegal scope classified as `malformed`, scope escalation classified as `scope_invalid`, and replay or reconciliation that never creates a second receiver session.
 
-- valid initiation and authenticated context;
-- missing required fields;
-- additional unknown fields;
-- empty, duplicate, and wildcard scopes;
-- issuer, audience, receiver, and destination mismatch;
-- expired and inverted lifetimes, including the 60-second and 5-minute maxima and fractional excess;
-- calendar-valid and calendar-invalid timestamps on initiation, authenticated context, and failure, including years 0000–0099;
-- destination URI authority, user information, port, IPv6, and backslash rejection without canonicalizing a valid registered URI;
-- unsupported contract version and profile;
-- forged and browser-authored context rejection;
-- replay and `dependency_unavailable`, including the ban on a second receiver session and on converting dependency failure into success.
+Calendar and fractional timestamp tests remain in force.
 
-## 12. Publication artifacts
+## 19. Publication artifacts
 
 | Responsibility | Path |
 | --- | --- |
-| Protocol semantics, ownership, sequence, matrix, compatibility | `semantics/source-session-handoff-v1.0.md` |
-| Executable failure and retry matrix | `vocab/source-session-handoff-failure-v1.0.json` |
-| Shared structural definitions | `contracts/source-session-handoff/v1.0/defs.schema.json` |
-| Initiation schema and example | `contracts/source-session-handoff/v1.0/initiation.schema.json` |
-| Authenticated-context schema and example | `contracts/source-session-handoff/v1.0/authenticated-context.schema.json` |
-| Failure schema and example | `contracts/source-session-handoff/v1.0/failure.schema.json` |
+| Protocol semantics | `semantics/source-session-handoff-v1.0.md` |
+| Failure and machine-code matrix | `vocab/source-session-handoff-failure-v1.0.json` |
+| Shared definitions | `contracts/source-session-handoff/v1.0/defs.schema.json` |
+| Initiation | `contracts/source-session-handoff/v1.0/initiation.schema.json` |
+| Authorization request | `contracts/source-session-handoff/v1.0/authorization-request.schema.json` |
+| Authorization response | `contracts/source-session-handoff/v1.0/authorization-response.schema.json` |
+| Redemption request | `contracts/source-session-handoff/v1.0/redemption-request.schema.json` |
+| Redemption response | `contracts/source-session-handoff/v1.0/redemption-response.schema.json` |
+| Authenticated context | `contracts/source-session-handoff/v1.0/authenticated-context.schema.json` |
+| Trusted-source registration | `contracts/source-session-handoff/v1.0/trusted-source-registration.schema.json` |
+| Failure | `contracts/source-session-handoff/v1.0/failure.schema.json` |
 | Conformance fixtures | `tests/conformance/source-session-handoff/v1.0/` |
 | Runner registration | `tests/conformance/manifest.json` and `tests/conformance/run.mjs` |
 | Public family index | `README.md` |

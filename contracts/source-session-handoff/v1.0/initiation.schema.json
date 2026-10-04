@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/initiation.schema.json",
   "title": "Source Session Handoff — initiation wire (v1.0)",
-  "description": "Public-safe initiation of one source-session handoff under profile oauth2-authorization-code-pkce-s256-v1. A valid initiation does not authenticate identity and does not grant permission, role, membership, runtime admission, or access. Browser-supplied copies of this object are not trusted.",
+  "description": "Server-side initiation of one user-entry source-session handoff under profile oauth2-authorization-code-pkce-s256-v1. This object MUST NOT be copied wholesale into browser-visible parameters. A valid initiation does not authenticate identity and does not grant permission, role, membership, runtime admission, or access. It is not the Business Growth operational data gateway and it is not a receiver companion load request.",
   "type": "object",
   "additionalProperties": false,
   "unevaluatedProperties": false,
@@ -10,6 +10,7 @@
     "contract_family",
     "contract_version",
     "profile",
+    "purpose",
     "handoff_ref",
     "issuer",
     "receiver_ref",
@@ -32,6 +33,10 @@
     "profile": {
       "const": "oauth2-authorization-code-pkce-s256-v1",
       "description": "Selects the frozen OAuth 2.0 Authorization Code profile with PKCE S256 only."
+    },
+    "purpose": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Handoff purpose. Compared by exact string equality with the authorization request, redemption request, authenticated context, and trusted-source registration. It does not select an operational data API."
     },
     "handoff_ref": {
       "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",

@@ -489,6 +489,36 @@
       "name": "initiation multiple scopes",
       "schema": "contracts/source-session-handoff/v1.0/initiation.schema.json",
       "fixture": "tests/conformance/source-session-handoff/v1.0/positive/initiation.multiple-scopes.json"
+    },
+    {
+      "name": "valid v1.0 authorization request",
+      "schema": "contracts/source-session-handoff/v1.0/authorization-request.schema.json",
+      "fixture": "contracts/source-session-handoff/v1.0/authorization-request.example.json"
+    },
+    {
+      "name": "valid v1.0 authorization success callback",
+      "schema": "contracts/source-session-handoff/v1.0/authorization-response.schema.json",
+      "fixture": "contracts/source-session-handoff/v1.0/authorization-response.success.example.json"
+    },
+    {
+      "name": "valid v1.0 authorization denial callback",
+      "schema": "contracts/source-session-handoff/v1.0/authorization-response.schema.json",
+      "fixture": "contracts/source-session-handoff/v1.0/authorization-response.denial.example.json"
+    },
+    {
+      "name": "valid v1.0 redemption request",
+      "schema": "contracts/source-session-handoff/v1.0/redemption-request.schema.json",
+      "fixture": "contracts/source-session-handoff/v1.0/redemption-request.example.json"
+    },
+    {
+      "name": "valid v1.0 redemption response",
+      "schema": "contracts/source-session-handoff/v1.0/redemption-response.schema.json",
+      "fixture": "contracts/source-session-handoff/v1.0/redemption-response.example.json"
+    },
+    {
+      "name": "valid v1.0 trusted-source registration",
+      "schema": "contracts/source-session-handoff/v1.0/trusted-source-registration.schema.json",
+      "fixture": "contracts/source-session-handoff/v1.0/trusted-source-registration.example.json"
     }
   ],
   "source_session_handoff_v1_negative": [

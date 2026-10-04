@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/trusted-source-registration.schema.json",
+  "title": "Source Session Handoff — trusted-source registration (v1.0)",
+  "description": "Public verification material for one issuing source, client, receiver, and purpose. It does not contain receiver role, membership, grant, permission, receiver session authority, private key material, or a source or client secret. Caller-supplied key URLs are not trust.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "registration_version",
+    "issuer",
+    "client_ref",
+    "receiver_ref",
+    "purpose",
+    "allowed_contract_versions",
+    "allowed_profiles",
+    "authorization_endpoint",
+    "token_endpoint",
+    "destination_uris",
+    "status",
+    "algorithms",
+    "jwks"
+  ],
+  "properties": {
+    "registration_version": {
+      "const": "v1"
+    },
+    "issuer": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Issuer identifier compared by exact string equality. Trust is this registration, not a caller-supplied key URL."
+    },
+    "client_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef"
+    },
+    "receiver_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Receiving party binding. It is not a receiver role, membership, grant, or session."
+    },
+    "purpose": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef"
+    },
+    "allowed_contract_versions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "const": "v1.0"
+      }
+    },
+    "allowed_profiles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "const": "oauth2-authorization-code-pkce-s256-v1"
+      }
+    },
+    "authorization_endpoint": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/destinationUri",
+      "description": "Source authorization endpoint. Same syntax rules as a destination. Not a caller-supplied key URL."
+    },
+    "token_endpoint": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/destinationUri",
+      "description": "Source token endpoint used for server-side redemption. Same syntax rules as a destination."
+    },
+    "destination_uris": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/destinationUri"
+      },
+      "description": "Registered destinations. Matching is byte-for-byte equality of the original string after each value passes destination validation."
+    },
+    "status": {
+      "enum": ["enabled", "disabled", "revoked"]
+    },
+    "algorithms": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "EdDSA"]
+      },
+      "description": "Permitted JWS algorithms. v1.0 permits this set and no others. alg none is not a member."
+    },
+    "jwks": {
+      "type": "object",
+      "additionalProperties": false,
+      "unevaluatedProperties": false,
+      "required": ["keys"],
+      "properties": {
+        "keys": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/publicJwk"
+          }
+        }
+      }
+    },
+    "environment": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Optional public environment label. It is not a secret and it does not grant authority."
+    }
+  },
+  "$defs": {
+    "publicJwk": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kty", "kid", "use", "alg", "n", "e"],
+          "properties": {
+            "kty": { "const": "RSA" },
+            "kid": { "type": "string", "minLength": 1, "pattern": "^\\S+$" },
+            "use": { "const": "sig" },
+            "alg": { "enum": ["RS256", "RS384", "RS512"] },
+            "n": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_-]+$" },
+            "e": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_-]+$" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kty", "kid", "use", "alg", "crv", "x", "y"],
+          "properties": {
+            "kty": { "const": "EC" },
+            "kid": { "type": "string", "minLength": 1, "pattern": "^\\S+$" },
+            "use": { "const": "sig" },
+            "alg": { "const": "ES256" },
+            "crv": { "const": "P-256" },
+            "x": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_-]+$" },
+            "y": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_-]+$" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kty", "kid", "use", "alg", "crv", "x", "y"],
+          "properties": {
+            "kty": { "const": "EC" },
+            "kid": { "type": "string", "minLength": 1, "pattern": "^\\S+$" },
+            "use": { "const": "sig" },
+            "alg": { "const": "ES384" },
+            "crv": { "const": "P-384" },
+            "x": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_-]+$" },
+            "y": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_-]+$" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kty", "kid", "use", "alg", "crv", "x", "y"],
+          "properties": {
+            "kty": { "const": "EC" },
+            "kid": { "type": "string", "minLength": 1, "pattern": "^\\S+$" },
+            "use": { "const": "sig" },
+            "alg": { "const": "ES512" },
+            "crv": { "const": "P-521" },
+            "x": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_-]+$" },
+            "y": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_-]+$" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kty", "kid", "use", "alg", "crv", "x"],
+          "properties": {
+            "kty": { "const": "OKP" },
+            "kid": { "type": "string", "minLength": 1, "pattern": "^\\S+$" },
+            "use": { "const": "sig" },
+            "alg": { "const": "EdDSA" },
+            "crv": { "const": "Ed25519" },
+            "x": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_-]+$" }
+          }
+        }
+      ]
+    }
+  }
+}
