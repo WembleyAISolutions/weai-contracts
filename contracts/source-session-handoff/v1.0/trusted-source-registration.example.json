@@ -1,0 +1,29 @@
+{
+  "registration_version": "v1",
+  "issuer": "issuer-placeholder-001",
+  "client_ref": "client-placeholder-001",
+  "receiver_ref": "receiver-placeholder-001",
+  "purpose": "user-entry-session-handoff",
+  "allowed_contract_versions": ["v1.0"],
+  "allowed_profiles": ["oauth2-authorization-code-pkce-s256-v1"],
+  "authorization_endpoint": "https://issuer.example/oauth/authorize",
+  "token_endpoint": "https://issuer.example/oauth/token",
+  "destination_uris": [
+    "https://receiver.example/session-handoff/callback"
+  ],
+  "status": "enabled",
+  "algorithms": ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "EdDSA"],
+  "jwks": {
+    "keys": [
+      {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "alg": "EdDSA",
+        "use": "sig",
+        "kid": "source-key-placeholder-001",
+        "x": "-W7N1f7T962CJ8iM1h028HyKPrQy9lzYryAARqN5SRA"
+      }
+    ]
+  },
+  "environment": "public-conformance"
+}

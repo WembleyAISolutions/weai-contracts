@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
   "title": "Source Session Handoff — authenticated context wire (v1.0)",
-  "description": "Public-safe issuer-attested context after server-side redemption under profile oauth2-authorization-code-pkce-s256-v1. This object is not an OAuth token response. A valid context does not authenticate receiver identity and does not grant permission, role, membership, runtime admission, or access. Source role and permission references are source-attested bounds only. Browser-authored copies are never trusted.",
+  "description": "Issuer-attested authenticated context carried as the payload of one compact JWS. A valid context does not authenticate receiver identity and does not grant receiver role, membership, grant, permission, tenant authority, admission, or session. source_role_ref and source_permission_refs are source bounds only. Allowed clock skew in v1.0 is 0 seconds. The context MUST NOT outlive the source session from which it was issued. Browser-authored copies are never trusted.",
   "type": "object",
   "additionalProperties": false,
   "unevaluatedProperties": false,
@@ -10,6 +10,7 @@
     "contract_family",
     "contract_version",
     "profile",
+    "purpose",
     "handoff_ref",
     "transaction_ref",
     "issuer",
@@ -39,6 +40,10 @@
     "profile": {
       "const": "oauth2-authorization-code-pkce-s256-v1",
       "description": "Selects the frozen OAuth 2.0 Authorization Code profile with PKCE S256 only."
+    },
+    "purpose": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Handoff purpose. Compared by exact string equality with the initiation. It does not grant receiver authority."
     },
     "handoff_ref": {
       "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
@@ -90,11 +95,11 @@
     },
     "source_role_ref": {
       "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/boundedRef",
-      "description": "Source-attested role bound only. It does not create a receiver role."
+      "description": "SOURCE BOUND ONLY. It does not grant receiver role, membership, grant, permission, tenant authority, admission, or session."
     },
     "source_permission_refs": {
       "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/boundedRefArray",
-      "description": "Source-attested permission bounds only. They do not create receiver permissions."
+      "description": "SOURCE BOUNDS ONLY. They do not grant receiver role, membership, grant, permission, tenant authority, admission, or session."
     },
     "destination_uri": {
       "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/destinationUri",
@@ -106,7 +111,7 @@
     },
     "expires_at": {
       "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/utcTimestamp",
-      "description": "End of the context lifetime. Conformance requires a strictly positive duration no greater than 5 minutes."
+      "description": "End of the context lifetime. Conformance requires a strictly positive duration no greater than 5 minutes. Allowed clock skew is 0 seconds. expires_at MUST NOT be later than the source session expiry."
     },
     "correlation_ref": {
       "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
