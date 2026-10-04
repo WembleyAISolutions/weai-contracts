@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createPublicKey, verify } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -294,6 +294,13 @@ export function destinationUriValid(value) {
     return false;
   }
   if (typeof url.hostname !== "string" || url.hostname.length === 0) {
+    return false;
+  }
+  const originalAuthority = splitAuthority(authority);
+  if (originalAuthority === null) {
+    return false;
+  }
+  if (canonicalIpv4(url.hostname) && originalAuthority.host !== url.hostname) {
     return false;
   }
   if (url.search !== "" || url.hash !== "") {
@@ -703,7 +710,12 @@ export function inspectCompactJws(assertion) {
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
       return null;
     }
-    return { header, payload };
+    return {
+      header,
+      payload,
+      signingInput: Buffer.from(`${parts[0]}.${parts[1]}`),
+      signature: Buffer.from(parts[2], "base64url"),
+    };
   } catch {
     return null;
   }
@@ -733,6 +745,85 @@ export function jwsHeaderAccepted(header, permittedAlgorithms) {
     && !Object.hasOwn(header, "crit");
 }
 
+function publicKeyMatchesAlgorithm(alg, jwk) {
+  if (jwk.use !== "sig" || jwk.alg !== alg) {
+    return false;
+  }
+  if (alg === "EdDSA") {
+    return jwk.kty === "OKP" && jwk.crv === "Ed25519";
+  }
+  if (alg === "RS256" || alg === "RS384" || alg === "RS512") {
+    return jwk.kty === "RSA";
+  }
+  if (alg === "ES256") {
+    return jwk.kty === "EC" && jwk.crv === "P-256";
+  }
+  if (alg === "ES384") {
+    return jwk.kty === "EC" && jwk.crv === "P-384";
+  }
+  if (alg === "ES512") {
+    return jwk.kty === "EC" && jwk.crv === "P-521";
+  }
+  return false;
+}
+
+function verificationKeyFor(registration, kid, alg) {
+  if (registration === null || typeof registration !== "object" || Array.isArray(registration)) {
+    return null;
+  }
+  if (!Array.isArray(registration.algorithms) || !registration.algorithms.includes(alg)) {
+    return null;
+  }
+  const keys = registration.jwks && registration.jwks.keys;
+  if (!Array.isArray(keys)) {
+    return null;
+  }
+  const matches = keys.filter((key) => (
+    key !== null
+    && typeof key === "object"
+    && !Array.isArray(key)
+    && key.kid === kid
+  ));
+  if (matches.length !== 1) {
+    return null;
+  }
+  const jwk = matches[0];
+  const privateMembers = ["d", "p", "q", "dp", "dq", "qi", "k"];
+  if (privateMembers.some((member) => Object.hasOwn(jwk, member))) {
+    return null;
+  }
+  if (!publicKeyMatchesAlgorithm(alg, jwk)) {
+    return null;
+  }
+  try {
+    return createPublicKey({ key: jwk, format: "jwk" });
+  } catch {
+    return null;
+  }
+}
+
+function jwsSignatureValid(alg, key, signingInput, signature) {
+  if (!Buffer.isBuffer(signingInput) || !Buffer.isBuffer(signature) || signature.length === 0) {
+    return false;
+  }
+  try {
+    if (alg === "EdDSA") {
+      return verify(null, signingInput, key, signature);
+    }
+    if (alg === "ES256" || alg === "ES384" || alg === "ES512") {
+      const hash = alg === "ES256" ? "sha256" : alg === "ES384" ? "sha384" : "sha512";
+      return verify(hash, signingInput, { key, dsaEncoding: "ieee-p1363" }, signature);
+    }
+    if (alg === "RS256" || alg === "RS384" || alg === "RS512") {
+      const nodeAlg = alg === "RS256" ? "RSA-SHA256" : alg === "RS384" ? "RSA-SHA384" : "RSA-SHA512";
+      return verify(nodeAlg, signingInput, key, signature);
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function sameJsonValue(left, right) {
   if (Array.isArray(left) || Array.isArray(right)) {
     return sameArray(left, right);
@@ -747,22 +838,26 @@ function sameJsonValue(left, right) {
   return left === right;
 }
 
-export function redemptionResponseMatchesContext(response, context, permittedAlgorithms) {
-  if (response === null || typeof response !== "object" || Object.hasOwn(response, "refresh_token")) {
+export function redemptionResponseMatchesContext(response, context, registration) {
+  if (response === null || typeof response !== "object" || Array.isArray(response) || Object.hasOwn(response, "refresh_token")) {
     return false;
   }
   if (!Number.isInteger(response.expires_in) || response.expires_in < 1 || response.expires_in > 300) {
     return false;
   }
-  const lifetime = integralSecondLifetime(context?.issued_at, context?.expires_at);
-  if (lifetime === null || lifetime !== BigInt(response.expires_in) || lifetime > 300n) {
-    return false;
-  }
   const inspected = inspectCompactJws(response.assertion);
-  if (inspected === null || !jwsHeaderAccepted(inspected.header, permittedAlgorithms)) {
+  if (inspected === null || !jwsHeaderAccepted(inspected.header, registration?.algorithms)) {
     return false;
   }
-  return sameJsonValue(inspected.payload, context);
+  const key = verificationKeyFor(registration, inspected.header.kid, inspected.header.alg);
+  if (key === null || !jwsSignatureValid(inspected.header.alg, key, inspected.signingInput, inspected.signature)) {
+    return false;
+  }
+  if (!sameJsonValue(inspected.payload, context)) {
+    return false;
+  }
+  const lifetime = integralSecondLifetime(context?.issued_at, context?.expires_at);
+  return lifetime !== null && lifetime === BigInt(response.expires_in) && lifetime <= 300n;
 }
 
 function machineResult(code, extras = {}) {
@@ -856,7 +951,7 @@ export function assessRedemption(input) {
   if (challenge === null || challenge !== record.code_challenge) {
     return machineResult("PKCE_MISMATCH");
   }
-  if (request.purpose !== record.purpose) {
+  if (request.purpose !== record.purpose || request.purpose !== registration.purpose) {
     return machineResult("PURPOSE_MISMATCH");
   }
   if (request.handoff_ref !== record.handoff_ref) {

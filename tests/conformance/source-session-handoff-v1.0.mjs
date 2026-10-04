@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createPublicKey, verify } from "node:crypto";
+import { createPublicKey, generateKeyPairSync, sign, verify } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1101,28 +1101,37 @@ test("source-session-handoff destination uris require a real https authority", a
   ];
   for (const uri of accepted) {
     await t.test(`accepts ${uri}`, () => {
+      const initiation = structuredClone(loadJson(INITIATION_EXAMPLE));
+      initiation.destination_uri = uri;
+      assert.equal(validatorFor(INITIATION_SCHEMA)(initiation), true, uri);
       assert.equal(destinationUriValid(uri), true, uri);
     });
   }
 
   const schemaValidRejects = [
+    "https://[:::1]/callback",
+    "https://[gggg::1]/callback",
+    "https://[2001:db8:192.0.2.1::1]/callback",
+    "https://receiver.example/foo/../callback",
+    "https://receiver.example/%2e%2e/callback",
+  ];
+  const schemaInvalidRejects = [
     "https://:",
     "https:///",
     "https://user:pw@receiver.example/callback",
     "https://receiver.example:65536/callback",
     "https://receiver.example:/callback",
     "https://[::1",
-    "https://[:::1]/callback",
-    "https://[gggg::1]/callback",
     "https://receiver.example/foo\\bar",
     "https://receiver.example\\other.example/callback",
     "https://192.0.2.010/callback",
     "https://192.0.2/callback",
-    "https://[2001:db8:192.0.2.1::1]/callback",
-    "https://receiver.example/foo/../callback",
-    "https://receiver.example/%2e%2e/callback",
-  ];
-  const schemaInvalidRejects = [
+    "https://0x7f.0.0.1/callback",
+    "https://0x7f000001/callback",
+    "https://0X7F000001/callback",
+    "https://2130706433/callback",
+    "https://127.1/callback",
+    "https://0177.0.0.1/callback",
     "http://receiver.example/callback",
     "https://receiver.example/callback?code=1",
     "https://receiver.example/callback#fragment",
@@ -1152,9 +1161,13 @@ test("source-session-handoff destination uris require a real https authority", a
   }
   for (const uri of schemaInvalidRejects) {
     await t.test(`rejects ${uri}`, () => {
-      const { initiation } = pair(uri);
+      const { initiation, context } = pair(uri);
       assert.equal(validatorFor(INITIATION_SCHEMA)(initiation), false, uri);
       assert.equal(destinationUriValid(uri), false, uri);
+      const result = assessSourceSessionHandoff(presentationOf({ initiation, context }));
+      assert.equal(result.failure, "malformed", uri);
+      assert.equal(result.contextAccepted, false, uri);
+      assertNoSession(result);
     });
   }
   await t.test("host case is not canonicalized", () => {
@@ -1188,6 +1201,21 @@ test("source-session-handoff destination uris require a real https authority", a
     assert.equal(result.reconciled, false);
     assert.equal(result.contextAccepted, false);
     assertNoSession(result);
+  });
+  await t.test("non-canonical ipv4 does not consume an authorization code", () => {
+    for (const uri of [
+      "https://0x7f.0.0.1/callback",
+      "https://0x7f000001/callback",
+      "https://2130706433/callback",
+      "https://0177.0.0.1/callback",
+    ]) {
+      const request = structuredClone(publishedRedemptionRequest());
+      request.destination_uri = uri;
+      const result = redemptionOf({ request, schemaValidRequest: true });
+      assert.equal(result.code, "MALFORMED_REQUEST", uri);
+      assert.equal(result.codeConsumed, false, uri);
+      assertNoSession(result);
+    }
   });
   await t.test("double-slash path matches only the original bytes", () => {
     const left = "https://receiver.example/a//callback";
@@ -1223,6 +1251,55 @@ function codeRecordFor(request, overrides = {}) {
     source_context_ref: "source-context-placeholder-001",
     ...overrides,
   };
+}
+
+function publicJwk(publicKey, kid, alg) {
+  const jwk = publicKey.export({ format: "jwk" });
+  jwk.kid = kid;
+  jwk.alg = alg;
+  jwk.use = "sig";
+  return jwk;
+}
+
+function registrationWithKeys(keys, algorithms) {
+  return {
+    ...publishedRegistration(),
+    jwks: { keys },
+    algorithms,
+  };
+}
+
+function signedAssertion(header, payload, privateKey) {
+  const encodedHeader = Buffer.from(JSON.stringify(header)).toString("base64url");
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signingInput = Buffer.from(`${encodedHeader}.${encodedPayload}`);
+  let signature;
+  if (header.alg === "EdDSA") {
+    signature = sign(null, signingInput, privateKey);
+  } else if (header.alg === "ES256" || header.alg === "ES384" || header.alg === "ES512") {
+    const hash = header.alg === "ES256" ? "sha256" : header.alg === "ES384" ? "sha384" : "sha512";
+    signature = sign(hash, signingInput, { key: privateKey, dsaEncoding: "ieee-p1363" });
+  } else if (header.alg === "RS256" || header.alg === "RS384" || header.alg === "RS512") {
+    const nodeAlg = header.alg === "RS256" ? "RSA-SHA256" : header.alg === "RS384" ? "RSA-SHA384" : "RSA-SHA512";
+    signature = sign(nodeAlg, signingInput, privateKey);
+  } else {
+    throw new Error(`unsupported test algorithm ${header.alg}`);
+  }
+  return `${encodedHeader}.${encodedPayload}.${signature.toString("base64url")}`;
+}
+
+function corruptSignature(assertion) {
+  const parts = assertion.split(".");
+  const bytes = Buffer.from(parts[2], "base64url");
+  bytes[0] ^= 0xff;
+  parts[2] = bytes.toString("base64url");
+  return parts.join(".");
+}
+
+function compactWithHeader(header, payload) {
+  const encodedHeader = Buffer.from(JSON.stringify(header)).toString("base64url");
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${encodedHeader}.${encodedPayload}.AA`;
 }
 
 function redemptionOf(overrides = {}) {
@@ -1300,7 +1377,7 @@ test("source-session-handoff redemption issues one context and consumes the code
   const validateResponse = validatorFor(REDEMPTION_RESPONSE_SCHEMA);
   assert.equal(validateResponse(response), true, formatErrors(validateResponse));
   assert.equal(validatorFor(REGISTRATION_SCHEMA)(registration), true);
-  assert.equal(redemptionResponseMatchesContext(response, context, registration.algorithms), true);
+  assert.equal(redemptionResponseMatchesContext(response, context, registration), true);
   const inspected = inspectCompactJws(response.assertion);
   assert.equal(jwsHeaderAccepted(inspected.header, registration.algorithms), true);
   assert.equal(integralSecondLifetime(context.issued_at, context.expires_at), 240n);
@@ -1352,7 +1429,10 @@ test("source-session-handoff redemption issues one context and consumes the code
     const destination = redemptionOf({ request: otherDestination });
     assert.equal(destination.code, "DESTINATION_MISMATCH");
     assert.equal(destination.redirectPermitted, false);
-    assert.equal(redemptionOf({ record: { purpose: "other-purpose" } }).code, "PURPOSE_MISMATCH");
+    const recordPurpose = redemptionOf({ record: { purpose: "other-purpose" } });
+    assert.equal(recordPurpose.code, "PURPOSE_MISMATCH");
+    assert.equal(recordPurpose.codeConsumed, false);
+    assertNoSession(recordPurpose);
     const wrongProfile = structuredClone(publishedRedemptionRequest());
     wrongProfile.profile = "oauth2-authorization-code-pkce-plain-v1";
     assert.equal(redemptionOf({ request: wrongProfile, schemaValidRequest: false }).code, "UNSUPPORTED_PROFILE");
@@ -1364,18 +1444,133 @@ test("source-session-handoff redemption issues one context and consumes the code
     const refresh = structuredClone(response);
     refresh.refresh_token = "not-admitted";
     assert.equal(validateResponse(refresh), false);
-    assert.equal(redemptionResponseMatchesContext(refresh, context, registration.algorithms), false);
+    assert.equal(redemptionResponseMatchesContext(refresh, context, registration), false);
     const skewed = structuredClone(context);
     skewed.expires_at = "2026-08-15T00:04:20.5Z";
     assert.equal(integralSecondLifetime(skewed.issued_at, skewed.expires_at), null);
-    assert.equal(redemptionResponseMatchesContext(response, skewed, registration.algorithms), false);
+    assert.equal(redemptionResponseMatchesContext(response, skewed, registration), false);
     const headerWithJku = { ...inspected.header, jku: "https://caller.example/jwks" };
     assert.equal(jwsHeaderAccepted(headerWithJku, registration.algorithms), false);
     assert.equal(jwsHeaderAccepted({ alg: "none", kid: "source-key-placeholder-001" }, registration.algorithms), false);
     assert.equal(jwsHeaderAccepted({ alg: "EdDSA", kid: "source-key-placeholder-001", crit: ["bork"] }, registration.algorithms), false);
     const withIssuerClaim = { ...context, iss: context.issuer };
     assert.equal(validatorFor(CONTEXT_SCHEMA)(withIssuerClaim), false);
-    assert.equal(redemptionResponseMatchesContext(response, withIssuerClaim, registration.algorithms), false);
+    assert.equal(redemptionResponseMatchesContext(response, withIssuerClaim, registration), false);
+  });
+  await t.test("purpose must match the request, code record, and registration", () => {
+    const accepted = redemptionOf();
+    assert.equal(accepted.failure, null);
+    assert.equal(accepted.codeConsumed, true);
+    assertNoSession(accepted);
+
+    const otherRegistration = structuredClone(registration);
+    otherRegistration.purpose = "other-purpose";
+    const registrationDiffers = redemptionOf({ registration: otherRegistration });
+    assert.equal(registrationDiffers.code, "PURPOSE_MISMATCH");
+    assert.equal(registrationDiffers.failure, "unverified");
+    assert.equal(registrationDiffers.codeConsumed, false);
+    assert.equal(registrationDiffers.contextAccepted, false);
+    assertNoSession(registrationDiffers);
+
+    const otherRequest = structuredClone(publishedRedemptionRequest());
+    otherRequest.purpose = "other-purpose";
+    const requestDiffers = redemptionOf({ request: otherRequest });
+    assert.equal(requestDiffers.code, "PURPOSE_MISMATCH");
+    assert.equal(requestDiffers.codeConsumed, false);
+    assertNoSession(requestDiffers);
+
+    const recordDiffers = redemptionOf({ record: { purpose: "other-purpose" } });
+    assert.equal(recordDiffers.code, "PURPOSE_MISMATCH");
+    assert.equal(recordDiffers.codeConsumed, false);
+    assertNoSession(recordDiffers);
+
+    const stillValid = redemptionOf();
+    assert.equal(stillValid.failure, null);
+    assert.equal(stillValid.codeConsumed, true);
+    const replay = redemptionOf({ record: { consumed: true } });
+    assert.equal(replay.code, "CODE_REPLAYED");
+    assert.equal(replay.codeConsumed, false);
+    assert.equal(replay.mintsAdditionalReceiverSession, false);
+    assertNoSession(replay);
+  });
+  await t.test("redemption assertion signature is verified against the registration jwks", () => {
+    const ed = generateKeyPairSync("ed25519");
+    const otherEd = generateKeyPairSync("ed25519");
+    const ec = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+    const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const kid = "source-key-placeholder-001";
+    const edJwk = publicJwk(ed.publicKey, kid, "EdDSA");
+    const otherJwk = publicJwk(otherEd.publicKey, "other-key-001", "EdDSA");
+    const ecJwk = publicJwk(ec.publicKey, "ec-key-001", "ES256");
+    const rsaJwk = publicJwk(rsa.publicKey, "rsa-key-001", "RS256");
+    const edRegistration = registrationWithKeys([edJwk], ["EdDSA"]);
+    const header = { alg: "EdDSA", kid };
+    const signed = signedAssertion(header, context, ed.privateKey);
+    const issued = { ...structuredClone(response), assertion: signed };
+    assert.equal(redemptionResponseMatchesContext(issued, context, edRegistration), true);
+
+    const corrupted = corruptSignature(signed);
+    assert.notEqual(corrupted, signed);
+    assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: corrupted }, context, edRegistration), false);
+    const oneByte = signed.split(".");
+    oneByte[2] = Buffer.from([1]).toString("base64url");
+    assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: oneByte.join(".") }, context, edRegistration), false);
+    assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: signed.split(".").slice(0, 2).join(".") }, context, edRegistration), false);
+    assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: `${signed}=` }, context, edRegistration), false);
+
+    const unknownHeader = { alg: "EdDSA", kid: "unknown-key" };
+    const unknown = signedAssertion(unknownHeader, context, ed.privateKey);
+    assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: unknown }, context, edRegistration), false);
+
+    const wrongKey = signedAssertion(header, context, otherEd.privateKey);
+    assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: wrongKey }, context, edRegistration), false);
+    const bothKeys = registrationWithKeys([edJwk, otherJwk], ["EdDSA"]);
+    const signedByOther = signedAssertion({ alg: "EdDSA", kid: edJwk.kid }, context, otherEd.privateKey);
+    assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: signedByOther }, context, bothKeys), false);
+    const signedByRegisteredOther = signedAssertion({ alg: "EdDSA", kid: otherJwk.kid }, context, otherEd.privateKey);
+    assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: signedByRegisteredOther }, context, bothKeys), true);
+
+    assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: compactWithHeader({ alg: "none", kid }, context) }, context, edRegistration), false);
+    assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: compactWithHeader({ alg: "HS256", kid }, context) }, context, edRegistration), false);
+    const inconsistent = registrationWithKeys([edJwk], ["EdDSA", "RS256"]);
+    assert.equal(
+      redemptionResponseMatchesContext({ ...issued, assertion: compactWithHeader({ alg: "RS256", kid }, context) }, context, inconsistent),
+      false,
+    );
+    const omitted = registrationWithKeys([edJwk], ["RS256"]);
+    assert.equal(redemptionResponseMatchesContext(issued, context, omitted), false);
+
+    for (const injected of ["jku", "jwk", "x5u", "x5c"]) {
+      const injectedHeader = { alg: "EdDSA", kid, [injected]: "https://caller.example/keys" };
+      const injectedAssertion = signedAssertion(injectedHeader, context, ed.privateKey);
+      assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: injectedAssertion }, context, edRegistration), false, injected);
+    }
+
+    const altered = structuredClone(context);
+    altered.purpose = "other-purpose";
+    const parts = signed.split(".");
+    parts[1] = Buffer.from(JSON.stringify(altered)).toString("base64url");
+    assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: parts.join(".") }, context, edRegistration), false);
+    const resigned = signedAssertion(header, altered, ed.privateKey);
+    assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: resigned }, context, edRegistration), false);
+
+    const ambiguous = registrationWithKeys([edJwk, structuredClone(edJwk)], ["EdDSA"]);
+    assert.equal(redemptionResponseMatchesContext(issued, context, ambiguous), false);
+    const privateMaterial = structuredClone(edJwk);
+    privateMaterial.d = "AA";
+    assert.equal(redemptionResponseMatchesContext(issued, context, registrationWithKeys([privateMaterial], ["EdDSA"])), false);
+
+    const ecRegistration = registrationWithKeys([ecJwk], ["ES256"]);
+    const ecSigned = signedAssertion({ alg: "ES256", kid: ecJwk.kid }, context, ec.privateKey);
+    assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: ecSigned }, context, ecRegistration), true);
+    const rsaRegistration = registrationWithKeys([rsaJwk], ["RS256"]);
+    const rsaSigned = signedAssertion({ alg: "RS256", kid: rsaJwk.kid }, context, rsa.privateKey);
+    assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: rsaSigned }, context, rsaRegistration), true);
+    const ecAsRsa = registrationWithKeys([ecJwk], ["ES256", "RS256"]);
+    assert.equal(
+      redemptionResponseMatchesContext({ ...issued, assertion: compactWithHeader({ alg: "RS256", kid: ecJwk.kid }, context) }, context, ecAsRsa),
+      false,
+    );
   });
   await t.test("issuer unavailability is the only automatic retry besides dependency failure", () => {
     const issuerDown = redemptionOf({ issuerUnavailable: true });
