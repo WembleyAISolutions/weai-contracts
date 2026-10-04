@@ -463,17 +463,18 @@ function lifetimeFailure(initiation, context, at, sourceSessionExpiresAt) {
   if (!issuedInsideCodeWindow(initiation, context)) {
     return "expired";
   }
-  if (sourceSessionExpiresAt !== undefined && sourceSessionExpiresAt !== null) {
-    if (parseUtc(sourceSessionExpiresAt) === null) {
-      return "malformed";
-    }
-    const sessionEndsFirst = compareInstants(sourceSessionExpiresAt, context.expires_at);
-    if (sessionEndsFirst === null) {
-      return "malformed";
-    }
-    if (sessionEndsFirst < 0) {
-      return "expired";
-    }
+  if (sourceSessionExpiresAt === undefined || sourceSessionExpiresAt === null) {
+    return "unverified";
+  }
+  if (parseUtc(sourceSessionExpiresAt) === null) {
+    return "malformed";
+  }
+  const sessionEndsFirst = compareInstants(sourceSessionExpiresAt, context.expires_at);
+  if (sessionEndsFirst === null) {
+    return "malformed";
+  }
+  if (sessionEndsFirst < 0) {
+    return "expired";
   }
   const afterIssued = compareInstants(context.issued_at, at);
   const beforeExpiry = compareInstants(at, context.expires_at);
@@ -838,15 +839,74 @@ function sameJsonValue(left, right) {
   return left === right;
 }
 
-export function redemptionResponseMatchesContext(response, context, registration) {
-  if (response === null || typeof response !== "object" || Array.isArray(response) || Object.hasOwn(response, "refresh_token")) {
+const REDEMPTION_RESPONSE_FIELDS = [
+  "contract_family",
+  "contract_version",
+  "profile",
+  "status",
+  "token_type",
+  "assertion_format",
+  "assertion",
+  "expires_in",
+];
+
+function closedRedemptionResponse(response) {
+  if (response === null || typeof response !== "object" || Array.isArray(response)) {
     return false;
   }
-  if (!Number.isInteger(response.expires_in) || response.expires_in < 1 || response.expires_in > 300) {
+  const keys = Object.keys(response);
+  if (keys.length !== REDEMPTION_RESPONSE_FIELDS.length) {
+    return false;
+  }
+  if (!REDEMPTION_RESPONSE_FIELDS.every((field) => Object.hasOwn(response, field))) {
+    return false;
+  }
+  return response.contract_family === FAMILY
+    && response.contract_version === VERSION
+    && response.profile === PROFILE
+    && response.status === "issued"
+    && response.token_type === "Bearer"
+    && response.assertion_format === "compact-jws-authenticated-context-v1"
+    && typeof response.assertion === "string"
+    && Number.isInteger(response.expires_in)
+    && response.expires_in >= 1
+    && response.expires_in <= 300;
+}
+
+function registrationBindsContext(registration, context) {
+  if (
+    registration === null
+    || typeof registration !== "object"
+    || Array.isArray(registration)
+    || context === null
+    || typeof context !== "object"
+    || Array.isArray(context)
+  ) {
+    return false;
+  }
+  return registration.status === "enabled"
+    && context.contract_family === FAMILY
+    && context.contract_version === VERSION
+    && context.profile === PROFILE
+    && registration.issuer === context.issuer
+    && registration.client_ref === context.client_ref
+    && registration.receiver_ref === context.receiver_ref
+    && registration.receiver_ref === context.audience
+    && registration.purpose === context.purpose
+    && Array.isArray(registration.allowed_contract_versions)
+    && registration.allowed_contract_versions.includes(context.contract_version)
+    && Array.isArray(registration.allowed_profiles)
+    && registration.allowed_profiles.includes(context.profile)
+    && Array.isArray(registration.destination_uris)
+    && registration.destination_uris.includes(context.destination_uri);
+}
+
+export function redemptionResponseMatchesContext(response, context, registration) {
+  if (!closedRedemptionResponse(response) || !registrationBindsContext(registration, context)) {
     return false;
   }
   const inspected = inspectCompactJws(response.assertion);
-  if (inspected === null || !jwsHeaderAccepted(inspected.header, registration?.algorithms)) {
+  if (inspected === null || !jwsHeaderAccepted(inspected.header, registration.algorithms)) {
     return false;
   }
   const key = verificationKeyFor(registration, inspected.header.kid, inspected.header.alg);
@@ -856,7 +916,7 @@ export function redemptionResponseMatchesContext(response, context, registration
   if (!sameJsonValue(inspected.payload, context)) {
     return false;
   }
-  const lifetime = integralSecondLifetime(context?.issued_at, context?.expires_at);
+  const lifetime = integralSecondLifetime(context.issued_at, context.expires_at);
   return lifetime !== null && lifetime === BigInt(response.expires_in) && lifetime <= 300n;
 }
 
@@ -893,11 +953,14 @@ export function assessRedemption(input) {
   if (request === null || typeof request !== "object") {
     return machineResult("MALFORMED_REQUEST");
   }
-  if (request.contract_family === FAMILY && request.contract_version === VERSION && request.profile !== PROFILE) {
-    return machineResult("UNSUPPORTED_PROFILE");
-  }
-  if (request.contract_family === FAMILY && request.contract_version !== VERSION) {
+  if (request.contract_family !== FAMILY) {
     return machineResult("UNSUPPORTED_CONTRACT_VERSION");
+  }
+  if (request.contract_version !== VERSION) {
+    return machineResult("UNSUPPORTED_CONTRACT_VERSION");
+  }
+  if (request.profile !== PROFILE) {
+    return machineResult("UNSUPPORTED_PROFILE");
   }
   if (constantsUnsupported(request) || input.schemaValidRequest === false) {
     return machineResult("MALFORMED_REQUEST");

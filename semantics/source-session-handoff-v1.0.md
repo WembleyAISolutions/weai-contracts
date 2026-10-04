@@ -131,9 +131,11 @@ The protected header requires `alg` and `kid` and no other members. `alg` MUST b
 
 The receiver accepts the assertion only after the signature verifies. The signing input is the exact compact prefix `BASE64URL(protected-header).BASE64URL(payload)`. `kid` MUST resolve to exactly one public `use` = `sig` key in the trusted-source registration JWKS. Missing, unknown, invalid, or ambiguous resolution fails closed. The header algorithm MUST equal that key's `alg`, MUST be compatible with the key type, and MUST be the algorithm used for verification. A payload that matches the authenticated context is not issuer-attested until verification succeeds. The verifier does not fetch or accept a key from the assertion.
 
+Signature validity alone is not sufficient. Before a redemption response is accepted, the signed authenticated context MUST also be bound to the selected trusted-source registration by exact equality of `issuer`, `client_ref`, `receiver_ref` and `audience` (both equal the registration `receiver_ref`), `purpose`, and registered `destination_uri`. The context `contract_version` and `profile` MUST be permitted by `allowed_contract_versions` and `allowed_profiles`, and the registration status MUST be `enabled`. A valid signature under a key that is shared by another registration does not satisfy these bindings.
+
 `expires_in` is the exact whole-second authenticated-context lifetime, an integer from 1 through 300. If the context timestamps do not describe an integral-second lifetime matching `expires_in`, the redemption response is invalid.
 
-Failure uses the public failure object. It does not use an alternate private token-error object. `refresh_token` is forbidden in v1.0. Unknown fields are rejected.
+Failure uses the public failure object. It does not use an alternate private token-error object. `refresh_token` is forbidden in v1.0. The success response is closed: every required constant and field MUST be present and exact, and every unknown field, including `access_token`, is rejected.
 
 ## 7. Authenticated context
 
@@ -143,7 +145,7 @@ Required fields: `contract_family`, `contract_version`, `profile`, `purpose`, `h
 
 `source_role_ref` and `source_permission_refs` are source bounds only. They do not grant receiver role, membership, grant, permission, tenant authority, admission, or session.
 
-The maximum lifetime is 5 minutes. Allowed clock skew in v1.0 is 0 seconds. An evaluation instant before `issued_at` is `unverified`. An evaluation instant at or after `expires_at` is `expired`.
+The maximum lifetime is 5 minutes. Allowed clock skew in v1.0 is 0 seconds. Acceptance also requires a known source-session expiry bound. If the receiver cannot establish that bound from trusted server-side state or an equivalent issuer-attested source-session bound, the context fails closed as `unverified`. A context whose `expires_at` is later than the source-session expiry is `expired`. An evaluation instant before `issued_at` is `unverified`. An evaluation instant at or after `expires_at` is `expired`.
 
 `record_scope_refs` and `source_permission_refs` use the same non-empty, unique, no-wildcard rule as initiation scopes. On the wire they MUST be sorted in ascending UTF-16 code-unit order.
 
@@ -231,7 +233,7 @@ Timestamps use the v1.0 UTC grammar: `Z` only, no numeric offset, no leap-second
 Schema validity is necessary and not sufficient. Conforming evaluation of a bound initiation and authenticated context MUST apply the first matching rule:
 
 1. If a required dependency cannot be reached, the outcome is `dependency_unavailable`, `retryable` true, with no accepted context, no empty scope, no unscoped redirect, and no receiver session. Issuer unavailability uses machine code `ISSUER_UNAVAILABLE`. Any other such dependency uses `DEPENDENCY_UNAVAILABLE`.
-2. If the peer `contract_family`, `contract_version`, or `profile` is not this published triple, the outcome is `unsupported_version`. Machine code `UNSUPPORTED_PROFILE` or `UNSUPPORTED_CONTRACT_VERSION` applies when that is the defect.
+2. If the peer `contract_family`, `contract_version`, or `profile` is not this published triple, the outcome is `unsupported_version`. `UNSUPPORTED_PROFILE` applies to a profile mismatch. `UNSUPPORTED_CONTRACT_VERSION` applies to either a contract-family mismatch or a contract-version mismatch.
 3. If a scope or permission element is structurally illegal — not a string, an empty string, or whitespace — the outcome is `malformed`. This classification precedes semantic scope classification.
 4. If a record-scope array or `source_permission_refs` is an empty set, duplicated, wildcarded, not in ascending UTF-16 code-unit order, or contains a bound that is a proper prefix of another, or if context record scopes are not a subset of the initiation request, the outcome is `scope_invalid` and the machine code is `RECORD_SCOPE_INVALID`.
 5. If the peer object otherwise fails schema validation, a timestamp is not a calendar-valid UTC instant, or `destination_uri` fails section 8, the outcome is `malformed`.
