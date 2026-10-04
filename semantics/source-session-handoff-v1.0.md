@@ -61,7 +61,7 @@ Browser-authored identity, organisation, role, and scope are never trusted. Inte
 
 Required fields: `contract_family`, `contract_version`, `profile`, `purpose`, `handoff_ref`, `issuer`, `receiver_ref`, `client_ref`, `destination_uri`, `transaction_ref`, `nonce_ref`, `requested_record_scope_refs`, `initiated_at`, `expires_at`, `correlation_ref`.
 
-`purpose` is an opaque string compared by exact equality across initiation, authorization request, redemption request, authenticated context, and trusted-source registration.
+`purpose` is an opaque string compared by exact equality across initiation, authorization request, redemption request, authorization-code record, authenticated context, and trusted-source registration.
 
 `requested_record_scope_refs` MUST be a non-empty array of unique bounds. A wildcard asterisk, whitespace, and duplicates are schema-invalid. A bound that is a proper UTF-16 prefix of another bound in the same array is ambiguous and fails closed as `scope_invalid` even when the schema accepts the strings. An empty array is the empty-set case and is `scope_invalid`. A numeric, empty-string, or other structurally illegal element is `malformed`, not `scope_invalid`.
 
@@ -112,7 +112,7 @@ If the client or the destination is not trusted, do not redirect the browser to 
 
 This object is server-to-server only. Required fields: `contract_family`, `contract_version`, `profile`, `grant_type` = `authorization_code`, `client_ref`, `destination_uri`, `authorization_code`, `code_verifier`, `handoff_ref`, `transaction_ref`, `correlation_ref`, `purpose`.
 
-The issuer MUST atomically validate the authorization-code record against the client, the exact destination, the S256 challenge, the handoff, the transaction, the correlation, the purpose, expiry, one-time-use status, and the bound source session and context. The code record is source-server internal state. It binds the authenticated source user, session, and context established at authorization time. The code becomes unusable at the start of successful atomic redemption.
+The issuer MUST atomically validate the authorization-code record against the client, the exact destination, the S256 challenge, the handoff, the transaction, the correlation, the purpose, expiry, one-time-use status, and the bound source session and context. `purpose` on the redemption request, the authorization-code record, and the trusted-source registration MUST be the same exact string. A difference is `PURPOSE_MISMATCH`. The code record is source-server internal state. It binds the authenticated source user, session, and context established at authorization time. The code is consumed only after every required check has succeeded. A failed check does not consume a still-valid code, does not issue an authenticated context, and does not create a receiver session. Successful validation consumes the code, and the code then becomes unusable.
 
 ### 6.2 Redemption response — public option A
 
@@ -128,6 +128,8 @@ The closed success response is:
 `assertion` is a compact JWS. Its payload is exactly one public authenticated-context v1.0 JSON object. v1.0 does not define a second claim vocabulary. It does not require duplicate private runtime claims such as simultaneous `iss` and `issuer`, `aud` and `audience`, `sub` and `subject_ref`, or `client_id` and `client_ref`.
 
 The protected header requires `alg` and `kid` and no other members. `alg` MUST be one of `RS256`, `RS384`, `RS512`, `ES256`, `ES384`, `ES512`, `EdDSA` and MUST be permitted by the trusted-source registration. Reject `alg` = `none`, a caller-controlled `jku`, an embedded caller `jwk`, `x5u`, `x5c`, and any critical header.
+
+The receiver accepts the assertion only after the signature verifies. The signing input is the exact compact prefix `BASE64URL(protected-header).BASE64URL(payload)`. `kid` MUST resolve to exactly one public `use` = `sig` key in the trusted-source registration JWKS. Missing, unknown, invalid, or ambiguous resolution fails closed. The header algorithm MUST equal that key's `alg`, MUST be compatible with the key type, and MUST be the algorithm used for verification. A payload that matches the authenticated context is not issuer-attested until verification succeeds. The verifier does not fetch or accept a key from the assertion.
 
 `expires_in` is the exact whole-second authenticated-context lifetime, an integer from 1 through 300. If the context timestamps do not describe an integral-second lifetime matching `expires_in`, the redemption response is invalid.
 
@@ -161,7 +163,7 @@ Issuer mismatch is `unverified` and machine code `ISSUER_MISMATCH`. Audience mis
 
 ## 8. Destination and redirect
 
-A destination is validated in two steps. First, reject the original string when it contains whitespace, a control character, a backslash, an asterisk, a query, or a fragment, or when the authority has user information, an empty port, a non-canonical port, or a non-canonical IPv4 literal. Second, parse that same original string with a standards-compliant URL parser. The parser accepts a nonempty host and a well-formed IPv6 literal. An embedded IPv4 is accepted only in the legal final 32-bit position; any other embedded IPv4 is rejected by the parser. A path the parser would rewrite, including dot segments, is rejected. A path with empty segments, including `/a//callback`, is valid. A legitimate port, including an explicit port that a parser would omit from its serialized form, is valid.
+A destination is validated in two steps. First, reject the original string when it contains whitespace, a control character, a backslash, an asterisk, a query, or a fragment, or when the authority has user information, an empty port, a non-canonical port, or a non-canonical IPv4 literal. Second, parse that same original string with a standards-compliant URL parser. The parser accepts a nonempty host and a well-formed IPv6 literal. An embedded IPv4 is accepted only in the legal final 32-bit position; any other embedded IPv4 is rejected by the parser. If the parser reads the host as IPv4, the original host spelling MUST already be that canonical dotted-decimal address. Hexadecimal, octal, integer, mixed-base, and any other spelling the parser rewrites into IPv4 are rejected. A path the parser would rewrite, including dot segments, is rejected. A path with empty segments, including `/a//callback`, is valid. A legitimate port, including an explicit port that a parser would omit from its serialized form, is valid.
 
 IPv6 syntax is the parser's syntax. This contract does not publish a partial IPv6 grammar.
 
@@ -209,12 +211,12 @@ The object MUST NOT carry passwords, bearer tokens, authorization codes, PKCE ve
 
 | Field | Objects | Comparison | Does not mean |
 | --- | --- | --- | --- |
-| `purpose` | initiation, authorization request, redemption request, context, registration | exact string | an operational data API |
+| `purpose` | initiation, authorization request, redemption request, authorization-code record, context, registration | exact string | an operational data API |
 | `state` | authorization request and response | server-side binding to `transaction_ref` | equality with `transaction_ref` |
 | `code_challenge` | authorization request | S256 of the server-side verifier | the verifier itself |
 | `code_verifier` | redemption request | RFC 7636, server-side only | a browser parameter |
 | `authorization_code` / `code` | redemption request / callback | opaque, single-use, at least 128 bits, at most 60 seconds | a receiver session |
-| `assertion` | redemption response | compact JWS of one authenticated context | a second claim set or a refresh token |
+| `assertion` | redemption response | compact JWS of one authenticated context, signature verified with the registration JWKS | a second claim set or a refresh token |
 | `expires_in` | redemption response | exact integral seconds, 1 through 300 | a lifetime with clock skew |
 | `source_role_ref` | context | source bound only | a receiver role |
 | `source_permission_refs` | context | source bounds only | receiver permissions |
@@ -337,7 +339,7 @@ The wire objects MUST NOT carry passwords, native source bearer tokens other tha
 
 `npm test` validates this family together with frozen v0.1, v0.2, and professional-authority-evidence v1.0.
 
-Minimum coverage includes valid initiation, authorization request, authorization callback, redemption request, redemption response, signed authenticated-context payload structure, trusted-source registration, exact destination matching, a double-slash path, malformed IPv6 and illegal embedded IPv4, PKCE S256, PKCE plain rejection, PKCE mismatch, one-time, expired, replayed, and unknown codes, wrong, disabled, and revoked clients, wrong issuer, audience, purpose, profile, and contract version, malformed request, redemption response, and authenticated context, context lifetime over 5 minutes, refresh token rejection, unknown fields on every closed object, source role distinct from receiver role, browser-sensitive field prohibition, a callback of only safe fields, structurally illegal scope classified as `malformed`, scope escalation classified as `scope_invalid`, and replay or reconciliation that never creates a second receiver session.
+Minimum coverage includes valid initiation, authorization request, authorization callback, redemption request, redemption response, cryptographic verification of the authenticated-context JWS against the registered `kid`, trusted-source registration, exact destination matching, a double-slash path, malformed IPv6 and illegal embedded IPv4, rejection of hexadecimal and other non-canonical IPv4 spellings, PKCE S256, PKCE plain rejection, PKCE mismatch, one-time, expired, replayed, and unknown codes, wrong, disabled, and revoked clients, purpose equality across the redemption request, authorization-code record, and registration, wrong issuer, audience, purpose, profile, and contract version, malformed request, redemption response, and authenticated context, context lifetime over 5 minutes, refresh token rejection, unknown fields on every closed object, source role distinct from receiver role, browser-sensitive field prohibition, a callback of only safe fields, structurally illegal scope classified as `malformed`, scope escalation classified as `scope_invalid`, and replay or reconciliation that never creates a second receiver session.
 
 Calendar and fractional timestamp tests remain in force.
 

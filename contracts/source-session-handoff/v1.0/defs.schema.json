@@ -28,8 +28,8 @@
     "destinationUri": {
       "type": "string",
       "minLength": 9,
-      "pattern": "^https://[^\\s?#*]+$",
-      "description": "Structural screen for an exact registered https destination: scheme https, no whitespace, query, fragment, or asterisk. Conformance parses the original string with a standards-compliant URL parser after explicit prechecks that reject user information, an empty or non-canonical port, a non-canonical IPv4 literal, a backslash, and any path the parser would rewrite. A nonempty host and a well-formed IPv6 literal, including an embedded IPv4 only in the final 32 bits, come from that parser. Empty path segments such as /a//callback remain valid. Exact binding is byte-for-byte equality of the original strings and is not URL canonicalization."
+      "pattern": "^https://(?:(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)*[A-Za-z](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?|(?:(?:0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}(?:0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])|\\[[A-Za-z0-9:.]+\\])(?::(?:0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(?:/(?:[A-Za-z0-9._~!$&'()+,;=:@-]|%[0-9A-Fa-f]{2})*)*$",
+      "description": "Absolute https URI with a nonempty host: a DNS name, a canonical dotted-decimal IPv4 address, or a bracketed IPv6 literal. No user information, query, fragment, asterisk, whitespace, backslash, empty host, empty port, or port above 65535. Hexadecimal, octal, integer, and other non-canonical IPv4 spellings are excluded. The bracketed form is not an IPv6 grammar; well-formed IPv6, including an embedded IPv4 only in the final 32 bits, is the standards-compliant parser used by conformance. Empty path segments such as /a//callback remain valid. Exact binding is byte-for-byte equality of the original strings and is not URL canonicalization."
     },
     "pkceVerifier": {
       "type": "string",
