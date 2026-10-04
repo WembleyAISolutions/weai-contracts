@@ -1,17 +1,29 @@
 import assert from "node:assert/strict";
+import { createPublicKey, verify } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import {
+  assessRedemption,
   assessSourceSessionHandoff,
+  browserCallbackQueryAllowed,
+  browserProhibitedFields,
   compareInstants,
   contextSemanticsHold,
   destinationUriValid,
+  destinationsExactMatch,
   durationWithin,
   failureObjectConforms,
   initiationSemanticsHold,
+  inspectCompactJws,
+  integralSecondLifetime,
+  jwsHeaderAccepted,
+  pkceChallengeFor,
+  pkceVerifierValid,
+  redemptionResponseMatchesContext,
+  registrationPermitsRedirect,
   parseUtc,
   retryableFor,
   sameCompleteAuthenticatedContext,
@@ -30,10 +42,21 @@ const CONTEXT_WINDOW_SECONDS = 300n;
 const EVALUATION_AT = "2026-08-15T00:00:30Z";
 
 const INITIATION_SCHEMA = "contracts/source-session-handoff/v1.0/initiation.schema.json";
+const AUTHZ_REQUEST_SCHEMA = "contracts/source-session-handoff/v1.0/authorization-request.schema.json";
+const AUTHZ_RESPONSE_SCHEMA = "contracts/source-session-handoff/v1.0/authorization-response.schema.json";
+const REDEMPTION_REQUEST_SCHEMA = "contracts/source-session-handoff/v1.0/redemption-request.schema.json";
+const REDEMPTION_RESPONSE_SCHEMA = "contracts/source-session-handoff/v1.0/redemption-response.schema.json";
 const CONTEXT_SCHEMA = "contracts/source-session-handoff/v1.0/authenticated-context.schema.json";
+const REGISTRATION_SCHEMA = "contracts/source-session-handoff/v1.0/trusted-source-registration.schema.json";
 const FAILURE_SCHEMA = "contracts/source-session-handoff/v1.0/failure.schema.json";
 const INITIATION_EXAMPLE = "contracts/source-session-handoff/v1.0/initiation.example.json";
+const AUTHZ_REQUEST_EXAMPLE = "contracts/source-session-handoff/v1.0/authorization-request.example.json";
+const AUTHZ_SUCCESS_EXAMPLE = "contracts/source-session-handoff/v1.0/authorization-response.success.example.json";
+const AUTHZ_DENIAL_EXAMPLE = "contracts/source-session-handoff/v1.0/authorization-response.denial.example.json";
+const REDEMPTION_REQUEST_EXAMPLE = "contracts/source-session-handoff/v1.0/redemption-request.example.json";
+const REDEMPTION_RESPONSE_EXAMPLE = "contracts/source-session-handoff/v1.0/redemption-response.example.json";
 const CONTEXT_EXAMPLE = "contracts/source-session-handoff/v1.0/authenticated-context.example.json";
+const REGISTRATION_EXAMPLE = "contracts/source-session-handoff/v1.0/trusted-source-registration.example.json";
 const FAILURE_EXAMPLE = "contracts/source-session-handoff/v1.0/failure.example.json";
 const FAILURE_MATRIX = "vocab/source-session-handoff-failure-v1.0.json";
 const SEMANTICS = "semantics/source-session-handoff-v1.0.md";
@@ -95,8 +118,23 @@ function schemaForFixture(relPath) {
   if (name.startsWith("initiation.")) {
     return INITIATION_SCHEMA;
   }
+  if (name.startsWith("authorization-request.")) {
+    return AUTHZ_REQUEST_SCHEMA;
+  }
+  if (name.startsWith("authorization-response.")) {
+    return AUTHZ_RESPONSE_SCHEMA;
+  }
+  if (name.startsWith("redemption-request.")) {
+    return REDEMPTION_REQUEST_SCHEMA;
+  }
+  if (name.startsWith("redemption-response.")) {
+    return REDEMPTION_RESPONSE_SCHEMA;
+  }
   if (name.startsWith("authenticated-context.")) {
     return CONTEXT_SCHEMA;
+  }
+  if (name.startsWith("trusted-source-registration.")) {
+    return REGISTRATION_SCHEMA;
   }
   if (name.startsWith("failure.")) {
     return FAILURE_SCHEMA;
@@ -131,6 +169,7 @@ function presentationOf(overrides = {}) {
     uncertain: overrides.uncertain ?? false,
     redeemedContext: overrides.redeemedContext ?? null,
     at: Object.hasOwn(overrides, "at") ? overrides.at : EVALUATION_AT,
+    sourceSessionExpiresAt: overrides.sourceSessionExpiresAt,
     requestReceiverAccess: overrides.requestReceiverAccess ?? false,
     schemaValidInitiation: validatorFor(INITIATION_SCHEMA)(initiation),
     schemaValidContext: validatorFor(CONTEXT_SCHEMA)(context),
@@ -243,7 +282,11 @@ test("source-session-handoff multiple explicit scopes and a proper subset are us
 test("source-session-handoff missing required fields are rejected", async (t) => {
   const cases = [
     [INITIATION_SCHEMA, INITIATION_EXAMPLE],
+    [AUTHZ_REQUEST_SCHEMA, AUTHZ_REQUEST_EXAMPLE],
+    [REDEMPTION_REQUEST_SCHEMA, REDEMPTION_REQUEST_EXAMPLE],
+    [REDEMPTION_RESPONSE_SCHEMA, REDEMPTION_RESPONSE_EXAMPLE],
     [CONTEXT_SCHEMA, CONTEXT_EXAMPLE],
+    [REGISTRATION_SCHEMA, REGISTRATION_EXAMPLE],
     [FAILURE_SCHEMA, FAILURE_EXAMPLE],
   ];
   for (const [schemaRel, exampleRel] of cases) {
@@ -264,7 +307,13 @@ test("source-session-handoff missing required fields are rejected", async (t) =>
 test("source-session-handoff unknown and prohibited fields are rejected", async (t) => {
   const cases = [
     [INITIATION_SCHEMA, INITIATION_EXAMPLE],
+    [AUTHZ_REQUEST_SCHEMA, AUTHZ_REQUEST_EXAMPLE],
+    [AUTHZ_RESPONSE_SCHEMA, AUTHZ_SUCCESS_EXAMPLE],
+    [AUTHZ_RESPONSE_SCHEMA, AUTHZ_DENIAL_EXAMPLE],
+    [REDEMPTION_REQUEST_SCHEMA, REDEMPTION_REQUEST_EXAMPLE],
+    [REDEMPTION_RESPONSE_SCHEMA, REDEMPTION_RESPONSE_EXAMPLE],
     [CONTEXT_SCHEMA, CONTEXT_EXAMPLE],
+    [REGISTRATION_SCHEMA, REGISTRATION_EXAMPLE],
     [FAILURE_SCHEMA, FAILURE_EXAMPLE],
   ];
   for (const [schemaRel, exampleRel] of cases) {
@@ -294,6 +343,23 @@ test("source-session-handoff failure matrix matches the schema and semantics", (
   assert.equal(matrix.contract_version, VERSION);
   assert.equal(matrix.profile, PROFILE);
   const validate = validatorFor(FAILURE_SCHEMA);
+  const representative = new Map();
+  for (const entry of matrix.codes) {
+    assert.equal(typeof entry.code, "string");
+    assert.equal(typeof entry.safe_browser_behavior, "string");
+    assert.ok(Array.isArray(entry.phase) && entry.phase.length > 0, entry.code);
+    assert.equal(entry.retryable, retryableFor(entry.outcome), entry.code);
+    assert.equal(semantics.includes(`\`${entry.code}\``), true, entry.code);
+    if (!representative.has(entry.outcome)) {
+      representative.set(entry.outcome, entry.code);
+    }
+    const automatic = entry.code === "ISSUER_UNAVAILABLE" || entry.code === "DEPENDENCY_UNAVAILABLE";
+    assert.equal(entry.retryable, automatic, entry.code);
+  }
+  assert.equal(
+    matrix.codes.find((entry) => entry.code === "SOURCE_AUTHENTICATION_REQUIRED").safe_browser_behavior,
+    "user_action_required",
+  );
   for (const entry of matrix.outcomes) {
     assert.equal(entry.retryable, retryableFor(entry.outcome));
     assert.equal(semantics.includes(`\`${entry.outcome}\``), true, entry.outcome);
@@ -302,6 +368,7 @@ test("source-session-handoff failure matrix matches the schema and semantics", (
       contract_version: VERSION,
       profile: PROFILE,
       outcome: entry.outcome,
+      code: representative.get(entry.outcome),
       retryable: entry.retryable,
       correlation_ref: "correlation-placeholder-001",
       occurred_at: "2026-08-15T00:00:10Z",
@@ -661,6 +728,7 @@ test("source-session-handoff reconciliation requires the complete authenticated 
     ["organisation_ref", "organisation-placeholder-999"],
     ["account_ref", "account-placeholder-999"],
     ["source_role_ref", "source-role-placeholder-999"],
+    ["purpose", "purpose-placeholder-999"],
     ["issued_at", "2026-08-15T00:00:21Z"],
     ["expires_at", "2026-08-15T00:04:21Z"],
     ["contract_version", "v1.1"],
@@ -836,6 +904,7 @@ test("source-session-handoff dependency_unavailable never becomes success or an 
     contract_version: VERSION,
     profile: PROFILE,
     outcome: result.failure,
+    code: "DEPENDENCY_UNAVAILABLE",
     retryable: result.retryable,
     correlation_ref: "correlation-placeholder-001",
     occurred_at: EVALUATION_AT,
@@ -872,13 +941,32 @@ test("source-session-handoff missing and unknown fields classify as malformed", 
 });
 
 test("source-session-handoff wire schemas stay closed", () => {
-  for (const rel of [INITIATION_SCHEMA, CONTEXT_SCHEMA, FAILURE_SCHEMA]) {
+  const closed = [
+    INITIATION_SCHEMA,
+    AUTHZ_REQUEST_SCHEMA,
+    REDEMPTION_REQUEST_SCHEMA,
+    REDEMPTION_RESPONSE_SCHEMA,
+    CONTEXT_SCHEMA,
+    FAILURE_SCHEMA,
+  ];
+  for (const rel of closed) {
     const schema = loadJson(rel);
     assert.equal(schema.additionalProperties, false, rel);
     assert.equal(schema.unevaluatedProperties, false, rel);
     assert.equal(schema.properties.contract_family.const, FAMILY);
     assert.equal(schema.properties.contract_version.const, VERSION);
     assert.equal(schema.properties.profile.const, PROFILE);
+  }
+  const registration = loadJson(REGISTRATION_SCHEMA);
+  assert.equal(registration.additionalProperties, false);
+  assert.equal(registration.unevaluatedProperties, false);
+  assert.equal(registration.properties.registration_version.const, "v1");
+  assert.equal(Object.hasOwn(registration.properties, "receiver_role"), false);
+  const callback = loadJson(AUTHZ_RESPONSE_SCHEMA);
+  assert.equal(callback.oneOf.length, 2);
+  for (const branch of callback.oneOf) {
+    assert.equal(branch.additionalProperties, false);
+    assert.equal(branch.unevaluatedProperties, false);
   }
 });
 
@@ -1008,6 +1096,8 @@ test("source-session-handoff destination uris require a real https authority", a
     "https://192.0.2.10/callback",
     "https://[::ffff:192.0.2.1]/callback",
     "https://[0:0:0:0:0:0:0:1]/callback",
+    "https://receiver.example/a//callback",
+    "https://[2001:db8::1]/a//callback",
   ];
   for (const uri of accepted) {
     await t.test(`accepts ${uri}`, () => {
@@ -1027,6 +1117,10 @@ test("source-session-handoff destination uris require a real https authority", a
     "https://receiver.example/foo\\bar",
     "https://receiver.example\\other.example/callback",
     "https://192.0.2.010/callback",
+    "https://192.0.2/callback",
+    "https://[2001:db8:192.0.2.1::1]/callback",
+    "https://receiver.example/foo/../callback",
+    "https://receiver.example/%2e%2e/callback",
   ];
   const schemaInvalidRejects = [
     "http://receiver.example/callback",
@@ -1095,4 +1189,264 @@ test("source-session-handoff destination uris require a real https authority", a
     assert.equal(result.contextAccepted, false);
     assertNoSession(result);
   });
+  await t.test("double-slash path matches only the original bytes", () => {
+    const left = "https://receiver.example/a//callback";
+    const right = "https://receiver.example/a/callback";
+    assert.equal(destinationUriValid(left), true);
+    assert.equal(destinationUriValid(right), true);
+    assert.equal(destinationsExactMatch(left, left), true);
+    assert.equal(destinationsExactMatch(left, right), false);
+  });
+});
+
+function publishedRegistration() {
+  return loadJson(REGISTRATION_EXAMPLE);
+}
+
+function publishedRedemptionRequest() {
+  return loadJson(REDEMPTION_REQUEST_EXAMPLE);
+}
+
+function codeRecordFor(request, overrides = {}) {
+  return {
+    client_ref: request.client_ref,
+    destination_uri: request.destination_uri,
+    code_challenge: pkceChallengeFor(request.code_verifier),
+    code_challenge_method: "S256",
+    handoff_ref: request.handoff_ref,
+    transaction_ref: request.transaction_ref,
+    correlation_ref: request.correlation_ref,
+    purpose: request.purpose,
+    expires_at: "2026-08-15T00:01:00Z",
+    consumed: false,
+    source_session_ref: "source-session-placeholder-001",
+    source_context_ref: "source-context-placeholder-001",
+    ...overrides,
+  };
+}
+
+function redemptionOf(overrides = {}) {
+  const request = overrides.request ?? publishedRedemptionRequest();
+  return assessRedemption({
+    request,
+    schemaValidRequest: Object.hasOwn(overrides, "schemaValidRequest")
+      ? overrides.schemaValidRequest
+      : validatorFor(REDEMPTION_REQUEST_SCHEMA)(request),
+    registration: Object.hasOwn(overrides, "registration") ? overrides.registration : publishedRegistration(),
+    codeRecord: Object.hasOwn(overrides, "codeRecord") ? overrides.codeRecord : codeRecordFor(request, overrides.record),
+    codeChallengeMethod: overrides.codeChallengeMethod ?? "S256",
+    now: overrides.now ?? "2026-08-15T00:00:30Z",
+    issuerUnavailable: overrides.issuerUnavailable ?? false,
+    dependencyAvailable: overrides.dependencyAvailable ?? true,
+  });
+}
+
+test("source-session-handoff authorization callback and pkce shapes are closed", async (t) => {
+  const request = loadJson(AUTHZ_REQUEST_EXAMPLE);
+  const success = loadJson(AUTHZ_SUCCESS_EXAMPLE);
+  const denial = loadJson(AUTHZ_DENIAL_EXAMPLE);
+  const validateRequest = validatorFor(AUTHZ_REQUEST_SCHEMA);
+  const validateCallback = validatorFor(AUTHZ_RESPONSE_SCHEMA);
+  assert.equal(validateRequest(request), true, formatErrors(validateRequest));
+  assert.equal(validateCallback(success), true, formatErrors(validateCallback));
+  assert.equal(validateCallback(denial), true, formatErrors(validateCallback));
+  assert.notEqual(request.state, request.transaction_ref);
+  assert.equal(pkceVerifierValid("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"), true);
+  assert.equal(
+    pkceChallengeFor("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
+    request.code_challenge,
+  );
+
+  await t.test("authorization response required fields", () => {
+    const missingCode = structuredClone(success);
+    delete missingCode.code;
+    assert.equal(validateCallback(missingCode), false);
+    const missingError = structuredClone(denial);
+    delete missingError.error;
+    assert.equal(validateCallback(missingError), false);
+  });
+  await t.test("pkce plain is rejected", () => {
+    const plain = structuredClone(request);
+    plain.code_challenge_method = "plain";
+    assert.equal(validateRequest(plain), false);
+    const redeemed = redemptionOf({ codeChallengeMethod: "plain" });
+    assert.equal(redeemed.code, "INVALID_PKCE_METHOD");
+    assert.equal(redeemed.failure, "malformed");
+    assert.equal(redeemed.retryable, false);
+    assertNoSession(redeemed);
+  });
+  await t.test("browser callback contains only safe fields", () => {
+    assert.equal(browserCallbackQueryAllowed(success), true);
+    assert.equal(browserCallbackQueryAllowed(denial), true);
+    assert.equal(browserCallbackQueryAllowed({ ...success, subject_ref: "subject-placeholder-001" }), false);
+    assert.equal(browserCallbackQueryAllowed({ error: "invalid_scope", state: success.state }), false);
+    assert.equal(browserCallbackQueryAllowed({ error: "access_denied", state: success.state, error_description: "no" }), false);
+  });
+  await t.test("browser-sensitive fields are absent from the authorization request", () => {
+    const schema = loadJson(AUTHZ_REQUEST_SCHEMA);
+    for (const field of browserProhibitedFields()) {
+      assert.equal(Object.hasOwn(schema.properties, field), false, field);
+      assert.equal(Object.hasOwn(request, field), false, field);
+      assert.equal(Object.hasOwn(success, field), false, field);
+      assert.equal(Object.hasOwn(denial, field), false, field);
+    }
+  });
+});
+
+test("source-session-handoff redemption issues one context and consumes the code once", async (t) => {
+  const response = loadJson(REDEMPTION_RESPONSE_EXAMPLE);
+  const context = loadJson(CONTEXT_EXAMPLE);
+  const registration = publishedRegistration();
+  const validateResponse = validatorFor(REDEMPTION_RESPONSE_SCHEMA);
+  assert.equal(validateResponse(response), true, formatErrors(validateResponse));
+  assert.equal(validatorFor(REGISTRATION_SCHEMA)(registration), true);
+  assert.equal(redemptionResponseMatchesContext(response, context, registration.algorithms), true);
+  const inspected = inspectCompactJws(response.assertion);
+  assert.equal(jwsHeaderAccepted(inspected.header, registration.algorithms), true);
+  assert.equal(integralSecondLifetime(context.issued_at, context.expires_at), 240n);
+  const key = createPublicKey({ key: registration.jwks.keys[0], format: "jwk" });
+  const [header, payload, signature] = response.assertion.split(".");
+  assert.equal(
+    verify(null, Buffer.from(`${header}.${payload}`), key, Buffer.from(signature, "base64url")),
+    true,
+  );
+
+  await t.test("valid redemption consumes the code and does not mint a receiver session", () => {
+    const first = redemptionOf();
+    assert.equal(first.failure, null);
+    assert.equal(first.codeConsumed, true);
+    assertNoSession(first);
+    const replay = redemptionOf({ record: { consumed: true } });
+    assert.equal(replay.code, "CODE_REPLAYED");
+    assert.equal(replay.failure, "replayed");
+    assert.equal(replay.mintsAdditionalReceiverSession, false);
+    assertNoSession(replay);
+  });
+  await t.test("expired unknown and mismatched codes fail closed", () => {
+    const expired = redemptionOf({ now: "2026-08-15T00:01:00Z" });
+    assert.equal(expired.code, "CODE_EXPIRED");
+    assert.equal(expired.retryable, false);
+    assertNoSession(expired);
+    const unknown = redemptionOf({ codeRecord: null });
+    assert.equal(unknown.code, "CODE_UNKNOWN");
+    assertNoSession(unknown);
+    const mismatch = redemptionOf({ record: { code_challenge: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" } });
+    assert.equal(mismatch.code, "PKCE_MISMATCH");
+    assert.equal(mismatch.failure, "unverified");
+    assertNoSession(mismatch);
+  });
+  await t.test("client destination purpose profile and version failures", () => {
+    const wrongClient = structuredClone(publishedRedemptionRequest());
+    wrongClient.client_ref = "client-placeholder-002";
+    assert.equal(redemptionOf({ request: wrongClient }).code, "UNKNOWN_CLIENT");
+    const disabled = structuredClone(publishedRegistration());
+    disabled.status = "disabled";
+    assert.equal(redemptionOf({ registration: disabled }).code, "CLIENT_DISABLED");
+    assert.equal(registrationPermitsRedirect(disabled, disabled.client_ref, disabled.destination_uris[0]), false);
+    const revoked = structuredClone(publishedRegistration());
+    revoked.status = "revoked";
+    assert.equal(redemptionOf({ registration: revoked }).code, "CLIENT_REVOKED");
+    assert.equal(registrationPermitsRedirect(revoked, revoked.client_ref, revoked.destination_uris[0]), false);
+    const otherDestination = structuredClone(publishedRedemptionRequest());
+    otherDestination.destination_uri = "https://receiver.example/session-handoff/other";
+    const destination = redemptionOf({ request: otherDestination });
+    assert.equal(destination.code, "DESTINATION_MISMATCH");
+    assert.equal(destination.redirectPermitted, false);
+    assert.equal(redemptionOf({ record: { purpose: "other-purpose" } }).code, "PURPOSE_MISMATCH");
+    const wrongProfile = structuredClone(publishedRedemptionRequest());
+    wrongProfile.profile = "oauth2-authorization-code-pkce-plain-v1";
+    assert.equal(redemptionOf({ request: wrongProfile, schemaValidRequest: false }).code, "UNSUPPORTED_PROFILE");
+    const wrongVersion = structuredClone(publishedRedemptionRequest());
+    wrongVersion.contract_version = "v9.9";
+    assert.equal(redemptionOf({ request: wrongVersion, schemaValidRequest: false }).code, "UNSUPPORTED_CONTRACT_VERSION");
+  });
+  await t.test("malformed redemption response and refresh token are rejected", () => {
+    const refresh = structuredClone(response);
+    refresh.refresh_token = "not-admitted";
+    assert.equal(validateResponse(refresh), false);
+    assert.equal(redemptionResponseMatchesContext(refresh, context, registration.algorithms), false);
+    const skewed = structuredClone(context);
+    skewed.expires_at = "2026-08-15T00:04:20.5Z";
+    assert.equal(integralSecondLifetime(skewed.issued_at, skewed.expires_at), null);
+    assert.equal(redemptionResponseMatchesContext(response, skewed, registration.algorithms), false);
+    const headerWithJku = { ...inspected.header, jku: "https://caller.example/jwks" };
+    assert.equal(jwsHeaderAccepted(headerWithJku, registration.algorithms), false);
+    assert.equal(jwsHeaderAccepted({ alg: "none", kid: "source-key-placeholder-001" }, registration.algorithms), false);
+    assert.equal(jwsHeaderAccepted({ alg: "EdDSA", kid: "source-key-placeholder-001", crit: ["bork"] }, registration.algorithms), false);
+    const withIssuerClaim = { ...context, iss: context.issuer };
+    assert.equal(validatorFor(CONTEXT_SCHEMA)(withIssuerClaim), false);
+    assert.equal(redemptionResponseMatchesContext(response, withIssuerClaim, registration.algorithms), false);
+  });
+  await t.test("issuer unavailability is the only automatic retry besides dependency failure", () => {
+    const issuerDown = redemptionOf({ issuerUnavailable: true });
+    assert.equal(issuerDown.code, "ISSUER_UNAVAILABLE");
+    assert.equal(issuerDown.retryable, true);
+    assertNoSession(issuerDown);
+    const dependency = redemptionOf({ dependencyAvailable: false, issuerUnavailable: false });
+    assert.equal(dependency.code, "DEPENDENCY_UNAVAILABLE");
+    assert.equal(dependency.retryable, true);
+    assert.equal(dependency.synthesizedUnscopedRedirect, false);
+    assertNoSession(dependency);
+  });
+});
+
+test("source-session-handoff structural scope defects are malformed before scope_invalid", () => {
+  const numeric = structuredClone(loadJson(INITIATION_EXAMPLE));
+  numeric.requested_record_scope_refs = [1];
+  assert.equal(validatorFor(INITIATION_SCHEMA)(numeric), false);
+  const numericResult = assessSourceSessionHandoff(presentationOf({ initiation: numeric }));
+  assert.equal(numericResult.failure, "malformed");
+  assert.notEqual(numericResult.failure, "scope_invalid");
+  assertNoSession(numericResult);
+
+  const emptyString = structuredClone(loadJson(INITIATION_EXAMPLE));
+  emptyString.requested_record_scope_refs = [""];
+  assert.equal(validatorFor(INITIATION_SCHEMA)(emptyString), false);
+  const emptyResult = assessSourceSessionHandoff(presentationOf({ initiation: emptyString }));
+  assert.equal(emptyResult.failure, "malformed");
+  assertNoSession(emptyResult);
+});
+
+test("source-session-handoff context lifetime cannot use skew or outlive the source session", () => {
+  const before = assessSourceSessionHandoff(presentationOf({ at: "2026-08-15T00:00:19.999Z" }));
+  assert.equal(before.failure, "unverified");
+  assert.equal(before.retryable, false);
+  const outlives = assessSourceSessionHandoff(presentationOf({
+    sourceSessionExpiresAt: "2026-08-15T00:04:00Z",
+  }));
+  assert.equal(outlives.failure, "expired");
+  assertNoSession(outlives);
+  const equalEnd = assessSourceSessionHandoff(presentationOf({
+    sourceSessionExpiresAt: "2026-08-15T00:04:20Z",
+  }));
+  assert.equal(equalEnd.failure, null);
+  assert.equal(equalEnd.contextAccepted, true);
+  assertNoSession(equalEnd);
+});
+
+test("source-session-handoff registration is public verification material only", () => {
+  const registration = publishedRegistration();
+  const schema = loadJson(REGISTRATION_SCHEMA);
+  for (const field of ["receiver_role", "membership", "grant", "permission", "client_secret", "d"]) {
+    assert.equal(Object.hasOwn(schema.properties, field), false, field);
+  }
+  const withPrivate = structuredClone(registration);
+  withPrivate.jwks.keys[0].d = "not-a-public-parameter";
+  assert.equal(validatorFor(REGISTRATION_SCHEMA)(withPrivate), false);
+  assert.equal(
+    registrationPermitsRedirect(
+      registration,
+      registration.client_ref,
+      registration.destination_uris[0],
+    ),
+    true,
+  );
+  assert.equal(
+    registrationPermitsRedirect(
+      registration,
+      registration.client_ref,
+      "https://receiver.example:443/session-handoff/callback",
+    ),
+    false,
+  );
 });

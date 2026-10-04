@@ -2,6 +2,7 @@
   "contract_family": "source-session-handoff",
   "contract_version": "v1.1",
   "profile": "oauth2-authorization-code-pkce-s256-v1",
+  "purpose": "user-entry-session-handoff",
   "handoff_ref": "handoff-placeholder-001",
   "issuer": "issuer-placeholder-001",
   "receiver_ref": "receiver-placeholder-001",

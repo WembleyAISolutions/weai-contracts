@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/redemption-request.schema.json",
+  "title": "Source Session Handoff — redemption request (v1.0)",
+  "description": "Server-to-server redemption of one authorization code. grant_type is authorization_code. The PKCE verifier is present only on this object. The issuer MUST atomically validate the authorization-code record against client, exact destination, S256 challenge, handoff, transaction, correlation, purpose, expiry, one-time-use status, and the bound source session and context. This object is not a browser parameter.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "contract_family",
+    "contract_version",
+    "profile",
+    "grant_type",
+    "client_ref",
+    "destination_uri",
+    "authorization_code",
+    "code_verifier",
+    "handoff_ref",
+    "transaction_ref",
+    "correlation_ref",
+    "purpose"
+  ],
+  "properties": {
+    "contract_family": {
+      "const": "source-session-handoff"
+    },
+    "contract_version": {
+      "const": "v1.0"
+    },
+    "profile": {
+      "const": "oauth2-authorization-code-pkce-s256-v1"
+    },
+    "grant_type": {
+      "const": "authorization_code"
+    },
+    "client_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef"
+    },
+    "destination_uri": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/destinationUri",
+      "description": "Exact destination bound to the authorization code. Comparison is byte-for-byte and is not canonicalization."
+    },
+    "authorization_code": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/authorizationCode"
+    },
+    "code_verifier": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/pkceVerifier"
+    },
+    "handoff_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef"
+    },
+    "transaction_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef"
+    },
+    "correlation_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef"
+    },
+    "purpose": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef"
+    }
+  }
+}

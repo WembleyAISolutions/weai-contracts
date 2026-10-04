@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,14 +14,43 @@ const CONTEXT_WINDOW_SECONDS = 300n;
 
 const UTC_TIMESTAMP_PATTERN =
   /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(\.\d+)?Z$/;
-
-const DNS_LABEL = /^(?:[A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]{0,61}[A-Za-z0-9])$/;
-const PATH_SEGMENT = /^(?:[A-Za-z0-9\-._~!$&'()+,;=:@]|%[0-9A-Fa-f]{2})+$/;
-const HEXTET = /^[0-9A-Fa-f]{1,4}$/;
+const PKCE_VERIFIER_PATTERN = /^[A-Za-z0-9\-._~]{43,128}$/;
+const PERMITTED_ALGS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "EdDSA"];
+const SAFE_OAUTH_ERRORS = new Set([
+  "invalid_request",
+  "unauthorized_client",
+  "access_denied",
+  "unsupported_response_type",
+  "server_error",
+  "temporarily_unavailable",
+]);
+const BROWSER_PROHIBITED_FIELDS = [
+  "subject_ref",
+  "organisation_ref",
+  "account_ref",
+  "source_session_ref",
+  "source_context_ref",
+  "source_role_ref",
+  "source_permission_refs",
+  "record_scope_refs",
+  "requested_record_scope_refs",
+  "receiver_role",
+  "membership",
+  "grant",
+  "permission",
+  "code_verifier",
+  "assertion",
+  "access_token",
+  "refresh_token",
+  "id_token",
+  "token",
+];
 
 function loadJson(relPath) {
   return JSON.parse(readFileSync(join(repoRoot, relPath), "utf8"));
 }
+
+const FAILURE_MATRIX = loadJson("vocab/source-session-handoff-failure-v1.0.json");
 
 export function retryableFor(outcome) {
   switch (outcome) {
@@ -40,6 +70,11 @@ export function retryableFor(outcome) {
       throw new Error(`unsupported outcome ${unknown}`);
     }
   }
+}
+
+export function codeSpec(code) {
+  const entry = FAILURE_MATRIX.codes.find((item) => item.code === code);
+  return entry ?? null;
 }
 
 function isLeapYear(year) {
@@ -171,144 +206,62 @@ export function durationWithin(start, end, maxSeconds) {
   return true;
 }
 
-function validPort(port) {
-  if (!/^[0-9]{1,5}$/.test(port)) {
+function canonicalPort(port) {
+  if (!/^(0|[1-9][0-9]{0,4})$/.test(port)) {
     return false;
   }
   return BigInt(port) <= 65535n;
 }
 
-function validIpv4(host) {
+function canonicalIpv4(host) {
   const parts = host.split(".");
   if (parts.length !== 4) {
     return false;
   }
-  return parts.every((part) => {
-    if (!/^(?:0|[1-9][0-9]{0,2})$/.test(part)) {
-      return false;
-    }
-    return Number(part) <= 255;
-  });
+  return parts.every((part) => /^(0|[1-9][0-9]{0,2})$/.test(part) && Number(part) <= 255);
 }
 
-function validDns(host) {
-  const bare = host.endsWith(".") ? host.slice(0, -1) : host;
-  if (bare.length === 0 || bare.length > 253 || bare.endsWith(".")) {
-    return false;
-  }
-  return bare.split(".").every((label) => DNS_LABEL.test(label));
-}
-
-function ipv6GroupCount(groups) {
-  if (groups.length === 0) {
-    return 0;
-  }
-  const last = groups[groups.length - 1];
-  if (last.includes(".")) {
-    if (!validIpv4(last)) {
-      return null;
-    }
-    const head = groups.slice(0, -1);
-    if (!head.every((group) => HEXTET.test(group))) {
-      return null;
-    }
-    return head.length + 2;
-  }
-  if (!groups.every((group) => HEXTET.test(group))) {
-    return null;
-  }
-  return groups.length;
-}
-
-function validIpv6(body) {
-  if (body.length === 0 || body.includes("%")) {
-    return false;
-  }
-  const halves = body.split("::");
-  if (halves.length > 2) {
-    return false;
-  }
-  const left = halves[0] === "" ? [] : halves[0].split(":");
-  const right = halves.length === 2
-    ? (halves[1] === "" ? [] : halves[1].split(":"))
-    : null;
-  const leftCount = ipv6GroupCount(left);
-  if (leftCount === null) {
-    return false;
-  }
-  if (right === null) {
-    return leftCount === 8;
-  }
-  const rightCount = ipv6GroupCount(right);
-  if (rightCount === null) {
-    return false;
-  }
-  return leftCount + rightCount < 8;
-}
-
-function validPath(path) {
-  if (!path.startsWith("/")) {
-    return false;
-  }
-  const segments = path.split("/");
-  for (let index = 1; index < segments.length; index += 1) {
-    const segment = segments[index];
-    if (segment === "") {
-      if (index !== segments.length - 1) {
-        return false;
-      }
-      continue;
-    }
-    if (!PATH_SEGMENT.test(segment)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function validAuthority(authority) {
-  if (authority.length === 0 || authority.includes("@")) {
-    return false;
-  }
-  let host;
-  let port = null;
+function splitAuthority(authority) {
   if (authority.startsWith("[")) {
     const end = authority.indexOf("]");
     if (end < 2) {
-      return false;
+      return null;
     }
-    host = authority.slice(1, end);
+    const host = authority.slice(1, end);
     const after = authority.slice(end + 1);
     if (after.length === 0) {
-      port = null;
-    } else if (after.startsWith(":")) {
-      port = after.slice(1);
-    } else {
-      return false;
+      return { host, port: null };
     }
-    if (!validIpv6(host)) {
-      return false;
+    if (!after.startsWith(":")) {
+      return null;
     }
-  } else {
-    const colon = authority.lastIndexOf(":");
-    if (colon === -1) {
-      host = authority;
-    } else {
-      host = authority.slice(0, colon);
-      port = authority.slice(colon + 1);
-    }
-    if (host.length === 0) {
-      return false;
-    }
-    if (/^(?:[0-9]+\.){3}[0-9]+$/.test(host)) {
-      if (!validIpv4(host)) {
-        return false;
-      }
-    } else if (!validDns(host)) {
-      return false;
-    }
+    return { host, port: after.slice(1) };
   }
-  if (port !== null && !validPort(port)) {
+  if (authority.includes("@")) {
+    return null;
+  }
+  const colon = authority.lastIndexOf(":");
+  if (colon === -1) {
+    return { host: authority, port: null };
+  }
+  return {
+    host: authority.slice(0, colon),
+    port: authority.slice(colon + 1),
+  };
+}
+
+function authorityPrecheck(authority) {
+  if (authority.length === 0) {
+    return false;
+  }
+  const split = splitAuthority(authority);
+  if (split === null || split.host.length === 0) {
+    return false;
+  }
+  if (split.port !== null && !canonicalPort(split.port)) {
+    return false;
+  }
+  if (/^[0-9.]+$/.test(split.host) && !canonicalIpv4(split.host)) {
     return false;
   }
   return true;
@@ -322,19 +275,38 @@ export function destinationUriValid(value) {
     return false;
   }
   const rest = value.slice("https://".length);
-  if (rest.length === 0 || rest.startsWith("/") || rest.startsWith(":")) {
+  if (rest.length === 0) {
     return false;
   }
   const slash = rest.indexOf("/");
   const authority = slash === -1 ? rest : rest.slice(0, slash);
   const path = slash === -1 ? "" : rest.slice(slash);
-  if (!validAuthority(authority)) {
+  if (!authorityPrecheck(authority)) {
     return false;
   }
-  if (path !== "" && !validPath(path)) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
     return false;
   }
-  return true;
+  if (url.protocol !== "https:" || url.username !== "" || url.password !== "") {
+    return false;
+  }
+  if (typeof url.hostname !== "string" || url.hostname.length === 0) {
+    return false;
+  }
+  if (url.search !== "" || url.hash !== "") {
+    return false;
+  }
+  if (path === "") {
+    return url.pathname === "/";
+  }
+  return path === url.pathname;
+}
+
+export function destinationsExactMatch(left, right) {
+  return typeof left === "string" && left === right && destinationUriValid(left);
 }
 
 export function initiationSemanticsHold(initiation) {
@@ -365,7 +337,11 @@ export function failureObjectConforms(failure, schemaValid) {
   if (parseUtc(failure.occurred_at) === null) {
     return false;
   }
-  return failure.retryable === retryableFor(failure.outcome);
+  if (failure.retryable !== retryableFor(failure.outcome)) {
+    return false;
+  }
+  const spec = codeSpec(failure.code);
+  return spec !== null && spec.outcome === failure.outcome && spec.retryable === failure.retryable;
 }
 
 function constantsUnsupported(obj) {
@@ -392,8 +368,15 @@ function ambiguousPrefix(arr) {
   return false;
 }
 
-export function scopeArrayInvalid(arr) {
+export function scopeElementsStructurallyIllegal(arr) {
   if (!Array.isArray(arr)) {
+    return false;
+  }
+  return arr.some((item) => typeof item !== "string" || item.length === 0 || /\s/.test(item));
+}
+
+export function scopeArrayInvalid(arr) {
+  if (!Array.isArray(arr) || scopeElementsStructurallyIllegal(arr)) {
     return false;
   }
   if (arr.length === 0) {
@@ -402,13 +385,19 @@ export function scopeArrayInvalid(arr) {
   if (new Set(arr).size !== arr.length) {
     return true;
   }
-  if (arr.some((item) => typeof item !== "string" || item.length === 0 || item.includes("*") || /\s/.test(item))) {
+  if (arr.some((item) => item.includes("*"))) {
     return true;
   }
   if (!sortedAscending(arr)) {
     return true;
   }
   return ambiguousPrefix(arr);
+}
+
+function structuralScopeProblem(initiation, context) {
+  return scopeElementsStructurallyIllegal(initiation?.requested_record_scope_refs)
+    || scopeElementsStructurallyIllegal(context?.record_scope_refs)
+    || scopeElementsStructurallyIllegal(context?.source_permission_refs);
 }
 
 function isSubset(inner, outer) {
@@ -447,7 +436,8 @@ export function bindingMismatch(initiation, context) {
     || context.destination_uri !== initiation.destination_uri
     || context.handoff_ref !== initiation.handoff_ref
     || context.transaction_ref !== initiation.transaction_ref
-    || context.correlation_ref !== initiation.correlation_ref;
+    || context.correlation_ref !== initiation.correlation_ref
+    || context.purpose !== initiation.purpose;
 }
 
 function issuedInsideCodeWindow(initiation, context) {
@@ -456,7 +446,7 @@ function issuedInsideCodeWindow(initiation, context) {
   return afterStart !== null && beforeEnd !== null && afterStart <= 0 && beforeEnd <= 0;
 }
 
-function lifetimeFailure(initiation, context, at) {
+function lifetimeFailure(initiation, context, at, sourceSessionExpiresAt) {
   if (!durationWithin(initiation.initiated_at, initiation.expires_at, CODE_WINDOW_SECONDS)) {
     return "expired";
   }
@@ -465,6 +455,18 @@ function lifetimeFailure(initiation, context, at) {
   }
   if (!issuedInsideCodeWindow(initiation, context)) {
     return "expired";
+  }
+  if (sourceSessionExpiresAt !== undefined && sourceSessionExpiresAt !== null) {
+    if (parseUtc(sourceSessionExpiresAt) === null) {
+      return "malformed";
+    }
+    const sessionEndsFirst = compareInstants(sourceSessionExpiresAt, context.expires_at);
+    if (sessionEndsFirst === null) {
+      return "malformed";
+    }
+    if (sessionEndsFirst < 0) {
+      return "expired";
+    }
   }
   const afterIssued = compareInstants(context.issued_at, at);
   const beforeExpiry = compareInstants(at, context.expires_at);
@@ -564,6 +566,9 @@ export function assessSourceSessionHandoff(input) {
   if (constantsUnsupported(input.initiation) || constantsUnsupported(input.context)) {
     return closedResult("unsupported_version");
   }
+  if (structuralScopeProblem(input.initiation, input.context)) {
+    return closedResult("malformed");
+  }
   if (scopeProblem(input.initiation, input.context)) {
     return closedResult("scope_invalid");
   }
@@ -585,7 +590,12 @@ export function assessSourceSessionHandoff(input) {
   if (input.uncertain === true && !reconciliationCandidate) {
     return closedResult("replayed");
   }
-  const lifetime = lifetimeFailure(input.initiation, input.context, input.at);
+  const lifetime = lifetimeFailure(
+    input.initiation,
+    input.context,
+    input.at,
+    input.sourceSessionExpiresAt,
+  );
   if (lifetime !== null) {
     return closedResult(lifetime);
   }
@@ -603,4 +613,282 @@ export function assessSourceSessionHandoff(input) {
     accepted.reconciled = true;
   }
   return accepted;
+}
+
+export function pkceVerifierValid(verifier) {
+  return typeof verifier === "string" && PKCE_VERIFIER_PATTERN.test(verifier);
+}
+
+export function pkceChallengeFor(verifier) {
+  if (!pkceVerifierValid(verifier)) {
+    return null;
+  }
+  return createHash("sha256").update(verifier, "ascii").digest("base64url");
+}
+
+export function integralSecondLifetime(start, end) {
+  const left = instantParts(start);
+  const right = instantParts(end);
+  if (left === null || right === null) {
+    return null;
+  }
+  let whole = right.seconds - left.seconds;
+  const width = Math.max(left.fraction.length, right.fraction.length);
+  if (width > 0) {
+    const scale = 10n ** BigInt(width);
+    const leftFrac = BigInt(left.fraction.padEnd(width, "0"));
+    const rightFrac = BigInt(right.fraction.padEnd(width, "0"));
+    let frac = rightFrac - leftFrac;
+    if (frac < 0n) {
+      whole -= 1n;
+      frac += scale;
+    }
+    if (frac !== 0n) {
+      return null;
+    }
+  }
+  if (whole <= 0n) {
+    return null;
+  }
+  return whole;
+}
+
+export function browserProhibitedFields() {
+  return [...BROWSER_PROHIBITED_FIELDS];
+}
+
+export function browserCallbackQueryAllowed(params) {
+  if (params === null || typeof params !== "object" || Array.isArray(params)) {
+    return false;
+  }
+  const keys = Object.keys(params);
+  if (keys.length !== 2 || !Object.hasOwn(params, "state")) {
+    return false;
+  }
+  if (Object.hasOwn(params, "code") && !Object.hasOwn(params, "error")) {
+    return true;
+  }
+  return Object.hasOwn(params, "error")
+    && !Object.hasOwn(params, "code")
+    && SAFE_OAUTH_ERRORS.has(params.error);
+}
+
+export function registrationPermitsRedirect(registration, clientRef, destination) {
+  if (registration === null || typeof registration !== "object") {
+    return false;
+  }
+  if (registration.status !== "enabled" || registration.client_ref !== clientRef) {
+    return false;
+  }
+  if (!destinationUriValid(destination) || !Array.isArray(registration.destination_uris)) {
+    return false;
+  }
+  return registration.destination_uris.some((item) => item === destination);
+}
+
+export function inspectCompactJws(assertion) {
+  if (typeof assertion !== "string") {
+    return null;
+  }
+  const parts = assertion.split(".");
+  if (parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part))) {
+    return null;
+  }
+  try {
+    const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    if (header === null || typeof header !== "object" || Array.isArray(header)) {
+      return null;
+    }
+    if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+      return null;
+    }
+    return { header, payload };
+  } catch {
+    return null;
+  }
+}
+
+export function jwsHeaderAccepted(header, permittedAlgorithms) {
+  if (header === null || typeof header !== "object" || Array.isArray(header)) {
+    return false;
+  }
+  const keys = Object.keys(header);
+  if (keys.length !== 2 || !Object.hasOwn(header, "alg") || !Object.hasOwn(header, "kid")) {
+    return false;
+  }
+  if (typeof header.kid !== "string" || header.kid.length === 0 || /\s/.test(header.kid)) {
+    return false;
+  }
+  if (header.alg === "none" || !PERMITTED_ALGS.includes(header.alg)) {
+    return false;
+  }
+  if (!Array.isArray(permittedAlgorithms) || !permittedAlgorithms.includes(header.alg)) {
+    return false;
+  }
+  return !Object.hasOwn(header, "jku")
+    && !Object.hasOwn(header, "jwk")
+    && !Object.hasOwn(header, "x5u")
+    && !Object.hasOwn(header, "x5c")
+    && !Object.hasOwn(header, "crit");
+}
+
+function sameJsonValue(left, right) {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return sameArray(left, right);
+  }
+  if (left !== null && right !== null && typeof left === "object" && typeof right === "object") {
+    const keys = Object.keys(left);
+    if (keys.length !== Object.keys(right).length) {
+      return false;
+    }
+    return keys.every((key) => Object.hasOwn(right, key) && sameJsonValue(left[key], right[key]));
+  }
+  return left === right;
+}
+
+export function redemptionResponseMatchesContext(response, context, permittedAlgorithms) {
+  if (response === null || typeof response !== "object" || Object.hasOwn(response, "refresh_token")) {
+    return false;
+  }
+  if (!Number.isInteger(response.expires_in) || response.expires_in < 1 || response.expires_in > 300) {
+    return false;
+  }
+  const lifetime = integralSecondLifetime(context?.issued_at, context?.expires_at);
+  if (lifetime === null || lifetime !== BigInt(response.expires_in) || lifetime > 300n) {
+    return false;
+  }
+  const inspected = inspectCompactJws(response.assertion);
+  if (inspected === null || !jwsHeaderAccepted(inspected.header, permittedAlgorithms)) {
+    return false;
+  }
+  return sameJsonValue(inspected.payload, context);
+}
+
+function machineResult(code, extras = {}) {
+  const spec = codeSpec(code);
+  if (spec === null) {
+    throw new Error(`unsupported failure code ${code}`);
+  }
+  return {
+    failure: spec.outcome,
+    code,
+    retryable: spec.retryable,
+    contextAccepted: false,
+    grantsReceiverAccess: false,
+    mintsReceiverSession: false,
+    mintsAdditionalReceiverSession: false,
+    synthesizedUnscopedRedirect: false,
+    synthesizedEmptyContext: false,
+    reconciled: false,
+    redirectPermitted: false,
+    codeConsumed: false,
+    ...extras,
+  };
+}
+
+export function assessRedemption(input) {
+  if (input.issuerUnavailable === true) {
+    return machineResult("ISSUER_UNAVAILABLE");
+  }
+  if (input.dependencyAvailable === false) {
+    return machineResult("DEPENDENCY_UNAVAILABLE");
+  }
+  const request = input.request;
+  if (request === null || typeof request !== "object") {
+    return machineResult("MALFORMED_REQUEST");
+  }
+  if (request.contract_family === FAMILY && request.contract_version === VERSION && request.profile !== PROFILE) {
+    return machineResult("UNSUPPORTED_PROFILE");
+  }
+  if (request.contract_family === FAMILY && request.contract_version !== VERSION) {
+    return machineResult("UNSUPPORTED_CONTRACT_VERSION");
+  }
+  if (constantsUnsupported(request) || input.schemaValidRequest === false) {
+    return machineResult("MALFORMED_REQUEST");
+  }
+  if (!destinationUriValid(request.destination_uri) || !pkceVerifierValid(request.code_verifier)) {
+    return machineResult("MALFORMED_REQUEST");
+  }
+  if (input.codeChallengeMethod !== "S256") {
+    return machineResult("INVALID_PKCE_METHOD");
+  }
+  const registration = input.registration;
+  if (registration === null || typeof registration !== "object" || registration.client_ref !== request.client_ref) {
+    return machineResult("UNKNOWN_CLIENT");
+  }
+  if (registration.status === "disabled") {
+    return machineResult("CLIENT_DISABLED");
+  }
+  if (registration.status === "revoked") {
+    return machineResult("CLIENT_REVOKED");
+  }
+  if (registration.status !== "enabled") {
+    return machineResult("UNKNOWN_CLIENT");
+  }
+  if (!Array.isArray(registration.destination_uris) || !registration.destination_uris.includes(request.destination_uri)) {
+    return machineResult("DESTINATION_MISMATCH");
+  }
+  const record = input.codeRecord;
+  if (record === null || record === undefined) {
+    return machineResult("CODE_UNKNOWN");
+  }
+  if (record.code_challenge_method !== "S256") {
+    return machineResult("INVALID_PKCE_METHOD");
+  }
+  if (record.client_ref !== request.client_ref) {
+    return machineResult("UNKNOWN_CLIENT");
+  }
+  if (record.destination_uri !== request.destination_uri) {
+    return machineResult("DESTINATION_MISMATCH");
+  }
+  if (parseUtc(input.now) === null || parseUtc(record.expires_at) === null) {
+    return machineResult("MALFORMED_REQUEST");
+  }
+  const beforeExpiry = compareInstants(input.now, record.expires_at);
+  if (beforeExpiry === null || beforeExpiry >= 0) {
+    return machineResult("CODE_EXPIRED");
+  }
+  if (record.consumed === true) {
+    return machineResult("CODE_REPLAYED");
+  }
+  const challenge = pkceChallengeFor(request.code_verifier);
+  if (challenge === null || challenge !== record.code_challenge) {
+    return machineResult("PKCE_MISMATCH");
+  }
+  if (request.purpose !== record.purpose) {
+    return machineResult("PURPOSE_MISMATCH");
+  }
+  if (request.handoff_ref !== record.handoff_ref) {
+    return machineResult("HANDOFF_MISMATCH");
+  }
+  if (request.transaction_ref !== record.transaction_ref) {
+    return machineResult("TRANSACTION_MISMATCH");
+  }
+  if (request.correlation_ref !== record.correlation_ref) {
+    return machineResult("CORRELATION_MISMATCH");
+  }
+  if (
+    typeof record.source_session_ref !== "string"
+    || typeof record.source_context_ref !== "string"
+    || record.source_session_ref.length === 0
+    || record.source_context_ref.length === 0
+    || record.source_session_ref === record.source_context_ref
+  ) {
+    return machineResult("SOURCE_ROLE_CONTEXT_INVALID");
+  }
+  return {
+    failure: null,
+    code: null,
+    retryable: false,
+    contextAccepted: false,
+    grantsReceiverAccess: false,
+    mintsReceiverSession: false,
+    mintsAdditionalReceiverSession: false,
+    synthesizedUnscopedRedirect: false,
+    synthesizedEmptyContext: false,
+    reconciled: false,
+    redirectPermitted: false,
+    codeConsumed: true,
+  };
 }
