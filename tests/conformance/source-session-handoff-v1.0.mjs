@@ -468,7 +468,10 @@ test("source-session-handoff expired and inverted lifetimes fail closed", async 
   await t.test("exact 5 minute context remains usable", () => {
     const context = structuredClone(loadJson(CONTEXT_EXAMPLE));
     context.expires_at = "2026-08-15T00:05:20Z";
-    const result = assessSourceSessionHandoff(presentationOf({ context }));
+    const result = assessSourceSessionHandoff(presentationOf({
+      context,
+      sourceSessionExpiresAt: context.expires_at,
+    }));
     assert.equal(result.failure, null);
     assert.equal(result.contextAccepted, true);
   });
@@ -1272,6 +1275,7 @@ function codeRecordFor(request, overrides = {}) {
     transaction_ref: request.transaction_ref,
     correlation_ref: request.correlation_ref,
     purpose: request.purpose,
+    issued_at: "2026-08-15T00:00:00Z",
     expires_at: "2026-08-15T00:01:00Z",
     consumed: false,
     source_session_ref: "source-session-placeholder-001",
@@ -1652,6 +1656,166 @@ test("source-session-handoff redemption issues one context and consumes the code
       redemptionResponseMatchesContext({ ...issued, assertion: compactWithHeader({ alg: "RS256", kid: ecJwk.kid }, context) }, context, ecAsRsa),
       false,
     );
+  });
+  await t.test("a correctly signed payload must still be one closed authenticated context", () => {
+    const ed = generateKeyPairSync("ed25519");
+    const kid = "source-key-placeholder-001";
+    const edRegistration = registrationWithKeys([publicJwk(ed.publicKey, kid, "EdDSA")], ["EdDSA"]);
+    const header = { alg: "EdDSA", kid };
+    const accept = (payload, expiresIn = response.expires_in) => {
+      const assertion = signedAssertion(header, payload, ed.privateKey);
+      return redemptionResponseMatchesContext(
+        { ...structuredClone(response), assertion, expires_in: expiresIn },
+        payload,
+        edRegistration,
+      );
+    };
+    assert.equal(accept(context), true);
+    assert.equal(accept({ ...structuredClone(context), iss: context.issuer }), false);
+    assert.equal(accept({ ...structuredClone(context), extension_field: "not-admitted" }), false);
+    for (const field of ["subject_ref", "source_session_ref", "source_context_ref"]) {
+      const missing = structuredClone(context);
+      delete missing[field];
+      assert.equal(accept(missing), false, field);
+    }
+    const sameRefs = structuredClone(context);
+    sameRefs.source_context_ref = sameRefs.source_session_ref;
+    assert.equal(accept(sameRefs), false);
+    const wildcard = structuredClone(context);
+    wildcard.record_scope_refs = ["*"];
+    assert.equal(accept(wildcard), false);
+    const unsorted = structuredClone(context);
+    unsorted.source_permission_refs = [
+      "source-permission-placeholder-002",
+      "source-permission-placeholder-001",
+    ];
+    assert.equal(accept(unsorted), false);
+    const badDestination = structuredClone(context);
+    badDestination.destination_uri = "https://:";
+    assert.equal(accept(badDestination), false);
+    const badDay = structuredClone(context);
+    badDay.issued_at = "2026-02-30T00:00:00Z";
+    assert.equal(accept(badDay), false);
+    const tooLong = structuredClone(context);
+    tooLong.expires_at = "2026-08-15T00:05:21Z";
+    assert.equal(accept(tooLong, 300), false);
+    const wrongFamily = structuredClone(context);
+    wrongFamily.contract_family = "other-family";
+    assert.equal(accept(wrongFamily), false);
+    const wrongVersion = structuredClone(context);
+    wrongVersion.contract_version = "v9.9";
+    assert.equal(accept(wrongVersion), false);
+    const wrongProfile = structuredClone(context);
+    wrongProfile.profile = "other-profile";
+    assert.equal(accept(wrongProfile), false);
+  });
+  await t.test("authorization code lifetime is a 60 second window from issued_at", () => {
+    const judge = (record, now = "2026-08-15T00:00:30Z") => redemptionOf({ record, now });
+    const exact = judge({
+      issued_at: "2026-08-15T00:00:00.0000000000Z",
+      expires_at: "2026-08-15T00:01:00.0000000000Z",
+    });
+    assert.equal(exact.failure, null);
+    assert.equal(exact.codeConsumed, true);
+    assertNoSession(exact);
+
+    const fractional = judge({
+      issued_at: "2026-08-15T00:00:00.0000000000Z",
+      expires_at: "2026-08-15T00:01:00.0000000001Z",
+    });
+    assert.equal(fractional.code, "CODE_EXPIRED");
+    assert.equal(fractional.codeConsumed, false);
+    assertNoSession(fractional);
+
+    const sixtyOne = judge({
+      issued_at: "2026-08-15T00:00:00Z",
+      expires_at: "2026-08-15T00:01:01Z",
+    });
+    assert.equal(sixtyOne.code, "CODE_EXPIRED");
+    assert.equal(sixtyOne.codeConsumed, false);
+    assertNoSession(sixtyOne);
+
+    const fiveMinutes = judge({
+      issued_at: "2026-08-15T00:00:00Z",
+      expires_at: "2026-08-15T00:05:00Z",
+    }, "2026-08-15T00:01:00Z");
+    assert.equal(fiveMinutes.code, "CODE_EXPIRED");
+    assert.equal(fiveMinutes.codeConsumed, false);
+    assertNoSession(fiveMinutes);
+
+    const oneYear = judge({
+      issued_at: "2026-08-15T00:00:00Z",
+      expires_at: "2027-08-15T00:00:00Z",
+    });
+    assert.equal(oneYear.code, "CODE_EXPIRED");
+    assert.equal(oneYear.codeConsumed, false);
+    assertNoSession(oneYear);
+
+    const missingRecord = codeRecordFor(publishedRedemptionRequest());
+    delete missingRecord.issued_at;
+    const missing = redemptionOf({ codeRecord: missingRecord });
+    assert.equal(missing.code, "MALFORMED_REQUEST");
+    assert.equal(missing.codeConsumed, false);
+    assertNoSession(missing);
+
+    const malformed = judge({ issued_at: "2026-02-30T00:00:00Z" });
+    assert.equal(malformed.code, "MALFORMED_REQUEST");
+    assert.equal(malformed.codeConsumed, false);
+    assertNoSession(malformed);
+
+    const equalBounds = judge({
+      issued_at: "2026-08-15T00:00:30Z",
+      expires_at: "2026-08-15T00:00:30Z",
+    });
+    assert.equal(equalBounds.code, "CODE_EXPIRED");
+    assert.equal(equalBounds.codeConsumed, false);
+    assertNoSession(equalBounds);
+
+    const inverted = judge({
+      issued_at: "2026-08-15T00:01:00Z",
+      expires_at: "2026-08-15T00:00:00Z",
+    });
+    assert.equal(inverted.code, "CODE_EXPIRED");
+    assert.equal(inverted.codeConsumed, false);
+    assertNoSession(inverted);
+
+    const beforeStart = judge({
+      issued_at: "2026-08-15T00:00:40Z",
+      expires_at: "2026-08-15T00:01:40Z",
+    });
+    assert.equal(beforeStart.code, "CODE_EXPIRED");
+    assert.equal(beforeStart.codeConsumed, false);
+    assertNoSession(beforeStart);
+
+    const atStart = judge({
+      issued_at: "2026-08-15T00:00:30Z",
+      expires_at: "2026-08-15T00:01:30Z",
+    });
+    assert.equal(atStart.failure, null);
+    assert.equal(atStart.codeConsumed, true);
+
+    const beforeEnd = judge({
+      issued_at: "2026-08-15T00:00:00Z",
+      expires_at: "2026-08-15T00:01:00Z",
+    }, "2026-08-15T00:00:59Z");
+    assert.equal(beforeEnd.failure, null);
+    assert.equal(beforeEnd.codeConsumed, true);
+
+    const atEnd = judge({
+      issued_at: "2026-08-15T00:00:00Z",
+      expires_at: "2026-08-15T00:01:00Z",
+    }, "2026-08-15T00:01:00Z");
+    assert.equal(atEnd.code, "CODE_EXPIRED");
+    assert.equal(atEnd.codeConsumed, false);
+    assertNoSession(atEnd);
+
+    const once = redemptionOf();
+    assert.equal(once.failure, null);
+    assert.equal(once.codeConsumed, true);
+    const replay = redemptionOf({ record: { consumed: true } });
+    assert.equal(replay.code, "CODE_REPLAYED");
+    assert.equal(replay.codeConsumed, false);
+    assertNoSession(replay);
   });
   await t.test("issuer unavailability is the only automatic retry besides dependency failure", () => {
     const issuerDown = redemptionOf({ issuerUnavailable: true });

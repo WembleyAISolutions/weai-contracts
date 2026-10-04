@@ -2,6 +2,7 @@ import { createHash, createPublicKey, verify } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import Ajv2020 from "ajv/dist/2020.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const CONTEXT_SCHEMA = "contracts/source-session-handoff/v1.0/authenticated-context.schema.json";
@@ -332,6 +333,47 @@ export function contextSemanticsHold(context) {
   return parseUtc(context.issued_at) !== null
     && parseUtc(context.expires_at) !== null
     && destinationUriValid(context.destination_uri);
+}
+
+let authenticatedContextSchemaValid = null;
+
+function authenticatedContextSchemaHolds(payload) {
+  if (authenticatedContextSchemaValid === null) {
+    const ajv = new Ajv2020({
+      allErrors: true,
+      strict: true,
+      strictRequired: false,
+    });
+    ajv.addSchema(loadJson("contracts/common/v0.2/defs.schema.json"));
+    ajv.addSchema(loadJson("contracts/common/v1.0/defs.schema.json"));
+    ajv.addSchema(loadJson("contracts/source-session-handoff/v1.0/defs.schema.json"));
+    authenticatedContextSchemaValid = ajv.compile(loadJson(CONTEXT_SCHEMA));
+  }
+  return authenticatedContextSchemaValid(payload) === true;
+}
+
+function authenticatedContextSemanticsHold(payload) {
+  if (!contextSemanticsHold(payload) || constantsUnsupported(payload)) {
+    return false;
+  }
+  if (
+    typeof payload.source_session_ref !== "string"
+    || typeof payload.source_context_ref !== "string"
+    || payload.source_session_ref.length === 0
+    || payload.source_context_ref.length === 0
+    || payload.source_session_ref === payload.source_context_ref
+  ) {
+    return false;
+  }
+  if (
+    scopeElementsStructurallyIllegal(payload.record_scope_refs)
+    || scopeElementsStructurallyIllegal(payload.source_permission_refs)
+    || scopeArrayInvalid(payload.record_scope_refs)
+    || scopeArrayInvalid(payload.source_permission_refs)
+  ) {
+    return false;
+  }
+  return durationWithin(payload.issued_at, payload.expires_at, CONTEXT_WINDOW_SECONDS);
 }
 
 export function failureObjectConforms(failure, schemaValid) {
@@ -902,21 +944,28 @@ function registrationBindsContext(registration, context) {
 }
 
 export function redemptionResponseMatchesContext(response, context, registration) {
-  if (!closedRedemptionResponse(response) || !registrationBindsContext(registration, context)) {
+  if (!closedRedemptionResponse(response)) {
     return false;
   }
   const inspected = inspectCompactJws(response.assertion);
-  if (inspected === null || !jwsHeaderAccepted(inspected.header, registration.algorithms)) {
+  if (inspected === null || !jwsHeaderAccepted(inspected.header, registration?.algorithms)) {
     return false;
   }
   const key = verificationKeyFor(registration, inspected.header.kid, inspected.header.alg);
   if (key === null || !jwsSignatureValid(inspected.header.alg, key, inspected.signingInput, inspected.signature)) {
     return false;
   }
-  if (!sameJsonValue(inspected.payload, context)) {
+  const payload = inspected.payload;
+  if (!authenticatedContextSchemaHolds(payload) || !authenticatedContextSemanticsHold(payload)) {
     return false;
   }
-  const lifetime = integralSecondLifetime(context.issued_at, context.expires_at);
+  if (!registrationBindsContext(registration, payload)) {
+    return false;
+  }
+  if (!sameJsonValue(payload, context)) {
+    return false;
+  }
+  const lifetime = integralSecondLifetime(payload.issued_at, payload.expires_at);
   return lifetime !== null && lifetime === BigInt(response.expires_in) && lifetime <= 300n;
 }
 
@@ -1000,11 +1049,19 @@ export function assessRedemption(input) {
   if (record.destination_uri !== request.destination_uri) {
     return machineResult("DESTINATION_MISMATCH");
   }
-  if (parseUtc(input.now) === null || parseUtc(record.expires_at) === null) {
+  if (
+    parseUtc(input.now) === null
+    || parseUtc(record.issued_at) === null
+    || parseUtc(record.expires_at) === null
+  ) {
     return machineResult("MALFORMED_REQUEST");
   }
+  if (!durationWithin(record.issued_at, record.expires_at, CODE_WINDOW_SECONDS)) {
+    return machineResult("CODE_EXPIRED");
+  }
+  const afterIssued = compareInstants(record.issued_at, input.now);
   const beforeExpiry = compareInstants(input.now, record.expires_at);
-  if (beforeExpiry === null || beforeExpiry >= 0) {
+  if (afterIssued === null || beforeExpiry === null || afterIssued > 0 || beforeExpiry >= 0) {
     return machineResult("CODE_EXPIRED");
   }
   if (record.consumed === true) {
