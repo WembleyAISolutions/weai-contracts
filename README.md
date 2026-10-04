@@ -66,13 +66,18 @@ v1.0 publishes two separately selected families. Implementations MUST read `cont
 | Family | Wire object | Schema |
 | --- | --- | --- |
 | professional-authority-evidence | evidence only | `contracts/professional-authority-evidence/v1.0/evidence.schema.json` |
-| source-session-handoff | initiation only | `contracts/source-session-handoff/v1.0/initiation.schema.json` |
-| source-session-handoff | authenticated context only | `contracts/source-session-handoff/v1.0/authenticated-context.schema.json` |
-| source-session-handoff | failure only | `contracts/source-session-handoff/v1.0/failure.schema.json` |
+| source-session-handoff | initiation | `contracts/source-session-handoff/v1.0/initiation.schema.json` |
+| source-session-handoff | authorization request | `contracts/source-session-handoff/v1.0/authorization-request.schema.json` |
+| source-session-handoff | authorization response | `contracts/source-session-handoff/v1.0/authorization-response.schema.json` |
+| source-session-handoff | redemption request | `contracts/source-session-handoff/v1.0/redemption-request.schema.json` |
+| source-session-handoff | redemption response | `contracts/source-session-handoff/v1.0/redemption-response.schema.json` |
+| source-session-handoff | authenticated context | `contracts/source-session-handoff/v1.0/authenticated-context.schema.json` |
+| source-session-handoff | trusted-source registration | `contracts/source-session-handoff/v1.0/trusted-source-registration.schema.json` |
+| source-session-handoff | failure | `contracts/source-session-handoff/v1.0/failure.schema.json` |
 
 Shared public definitions for Professional Authority Evidence live in `contracts/common/v1.0/defs.schema.json`. Evidence is not authority, admission, or execution permission.
 
-Source Session Handoff v1.0 uses profile `oauth2-authorization-code-pkce-s256-v1`. A valid initiation, authenticated context, or failure does not authenticate identity and does not grant permission, role, membership, runtime admission, or access. Source role and permission references are source-attested bounds only. The family does not redefine a standard OAuth token response. See `semantics/source-session-handoff-v1.0.md`.
+Source Session Handoff v1.0 uses profile `oauth2-authorization-code-pkce-s256-v1`. It is the user-entry session handoff only. It does not define the Business Growth operational data gateway and it does not absorb a Business Growth operational API. `AgentBusinessLoadRequest` and `AgentBusinessLoadResult` are a post-session receiver companion contract, not this handoff. A valid wire object does not authenticate receiver identity and does not grant permission, role, membership, runtime admission, or access. Source role and permission references are source bounds only. Redemption success is public option A: a compact JWS whose payload is exactly one authenticated context. There is no refresh token. See `semantics/source-session-handoff-v1.0.md`.
 
 ## Identity model (v0.2)
 
