@@ -169,7 +169,9 @@ function presentationOf(overrides = {}) {
     uncertain: overrides.uncertain ?? false,
     redeemedContext: overrides.redeemedContext ?? null,
     at: Object.hasOwn(overrides, "at") ? overrides.at : EVALUATION_AT,
-    sourceSessionExpiresAt: overrides.sourceSessionExpiresAt,
+    sourceSessionExpiresAt: Object.hasOwn(overrides, "sourceSessionExpiresAt")
+      ? overrides.sourceSessionExpiresAt
+      : "2026-08-15T00:05:00Z",
     requestReceiverAccess: overrides.requestReceiverAccess ?? false,
     schemaValidInitiation: validatorFor(INITIATION_SCHEMA)(initiation),
     schemaValidContext: validatorFor(CONTEXT_SCHEMA)(context),
@@ -499,6 +501,31 @@ test("source-session-handoff expired and inverted lifetimes fail closed", async 
     const result = assessSourceSessionHandoff(presentationOf({ context }));
     assert.equal(result.failure, "expired");
     assert.equal(result.contextAccepted, false);
+  });
+});
+
+test("source-session-handoff requires an external source-session expiry bound", async (t) => {
+  await t.test("missing source-session expiry fails closed", () => {
+    const result = assessSourceSessionHandoff(presentationOf({ sourceSessionExpiresAt: undefined }));
+    assert.equal(result.failure, "unverified");
+    assert.equal(result.contextAccepted, false);
+    assertNoSession(result);
+  });
+  await t.test("context outliving the source session is expired", () => {
+    const result = assessSourceSessionHandoff(presentationOf({
+      sourceSessionExpiresAt: "2026-08-15T00:04:19Z",
+    }));
+    assert.equal(result.failure, "expired");
+    assert.equal(result.contextAccepted, false);
+    assertNoSession(result);
+  });
+  await t.test("context not outliving the source session remains eligible", () => {
+    const result = assessSourceSessionHandoff(presentationOf({
+      sourceSessionExpiresAt: "2026-08-15T00:04:20Z",
+    }));
+    assert.equal(result.failure, null);
+    assert.equal(result.contextAccepted, true);
+    assertNoSession(result);
   });
 });
 
@@ -1439,7 +1466,61 @@ test("source-session-handoff redemption issues one context and consumes the code
     const wrongVersion = structuredClone(publishedRedemptionRequest());
     wrongVersion.contract_version = "v9.9";
     assert.equal(redemptionOf({ request: wrongVersion, schemaValidRequest: false }).code, "UNSUPPORTED_CONTRACT_VERSION");
+    const wrongFamily = structuredClone(publishedRedemptionRequest());
+    wrongFamily.contract_family = "other-family";
+    const unsupportedFamily = redemptionOf({ request: wrongFamily, schemaValidRequest: false });
+    assert.equal(unsupportedFamily.code, "UNSUPPORTED_CONTRACT_VERSION");
+    assert.equal(unsupportedFamily.failure, "unsupported_version");
+    assert.equal(unsupportedFamily.codeConsumed, false);
+    assertNoSession(unsupportedFamily);
   });
+  await t.test("redemption response is closed and registration-bound", () => {
+    const wrongConstants = [
+      ["contract_family", "other-family"],
+      ["contract_version", "v9.9"],
+      ["profile", "other-profile"],
+      ["status", "pending"],
+      ["token_type", "DPoP"],
+      ["assertion_format", "other-format"],
+    ];
+    for (const [field, value] of wrongConstants) {
+      const candidate = structuredClone(response);
+      candidate[field] = value;
+      assert.equal(redemptionResponseMatchesContext(candidate, context, registration), false, field);
+    }
+    const extra = { ...structuredClone(response), access_token: "forbidden" };
+    assert.equal(redemptionResponseMatchesContext(extra, context, registration), false);
+    const missing = structuredClone(response);
+    delete missing.status;
+    assert.equal(redemptionResponseMatchesContext(missing, context, registration), false);
+
+    for (const [field, value] of [
+      ["issuer", "issuer-placeholder-002"],
+      ["client_ref", "client-placeholder-002"],
+      ["receiver_ref", "receiver-placeholder-002"],
+      ["purpose", "other-purpose"],
+    ]) {
+      const wrongRegistration = structuredClone(registration);
+      wrongRegistration[field] = value;
+      assert.equal(redemptionResponseMatchesContext(response, context, wrongRegistration), false, field);
+    }
+    const wrongAudienceRegistration = structuredClone(registration);
+    wrongAudienceRegistration.receiver_ref = "audience-placeholder-002";
+    assert.equal(redemptionResponseMatchesContext(response, context, wrongAudienceRegistration), false);
+    const wrongDestinationRegistration = structuredClone(registration);
+    wrongDestinationRegistration.destination_uris = ["https://receiver.example/session-handoff/other"];
+    assert.equal(redemptionResponseMatchesContext(response, context, wrongDestinationRegistration), false);
+    const disabledRegistration = structuredClone(registration);
+    disabledRegistration.status = "disabled";
+    assert.equal(redemptionResponseMatchesContext(response, context, disabledRegistration), false);
+    const wrongAllowedVersion = structuredClone(registration);
+    wrongAllowedVersion.allowed_contract_versions = [];
+    assert.equal(redemptionResponseMatchesContext(response, context, wrongAllowedVersion), false);
+    const wrongAllowedProfile = structuredClone(registration);
+    wrongAllowedProfile.allowed_profiles = [];
+    assert.equal(redemptionResponseMatchesContext(response, context, wrongAllowedProfile), false);
+  });
+
   await t.test("malformed redemption response and refresh token are rejected", () => {
     const refresh = structuredClone(response);
     refresh.refresh_token = "not-admitted";
