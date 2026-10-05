@@ -622,7 +622,7 @@ export function assessSourceSessionHandoff(input) {
   if (scopeProblem(input.initiation, input.context)) {
     return closedResult("scope_invalid");
   }
-  if (input.schemaValidInitiation === false || input.schemaValidContext === false) {
+  if (input.schemaValidInitiation !== true || input.schemaValidContext !== true) {
     return closedResult("malformed");
   }
   if (
@@ -707,12 +707,22 @@ export function browserProhibitedFields() {
   return [...BROWSER_PROHIBITED_FIELDS];
 }
 
-export function browserCallbackQueryAllowed(params) {
+export function authorizationRequestDestinationAccepted(request) {
+  if (request === null || typeof request !== "object" || Array.isArray(request)) {
+    return false;
+  }
+  return destinationUriValid(request.destination_uri);
+}
+
+export function browserCallbackQueryAllowed(params, expectedState) {
+  if (typeof expectedState !== "string" || expectedState.length === 0) {
+    return false;
+  }
   if (params === null || typeof params !== "object" || Array.isArray(params)) {
     return false;
   }
   const keys = Object.keys(params);
-  if (keys.length !== 2 || !Object.hasOwn(params, "state")) {
+  if (keys.length !== 2 || params.state !== expectedState) {
     return false;
   }
   if (Object.hasOwn(params, "code") && !Object.hasOwn(params, "error")) {
@@ -831,7 +841,7 @@ function verificationKeyFor(registration, kid, alg) {
     return null;
   }
   const jwk = matches[0];
-  const privateMembers = ["d", "p", "q", "dp", "dq", "qi", "k"];
+  const privateMembers = ["d", "p", "q", "dp", "dq", "qi", "oth", "k"];
   if (privateMembers.some((member) => Object.hasOwn(jwk, member))) {
     return null;
   }
