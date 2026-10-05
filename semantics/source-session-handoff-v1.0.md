@@ -79,6 +79,8 @@ Required fields: `contract_family`, `contract_version`, `profile`, `response_typ
 
 On the authorization redirect, query parameter names are these field names. This profile does not rename `destination_uri`.
 
+`destination_uri` MUST pass the same section 8 validation used for initiation and redemption. The structural schema pattern is only a screen. A bracketed host that the pattern admits and the parser rejects, including `https://[:::1]/callback`, is not an accepted authorization destination.
+
 `state` is an independent high-entropy opaque browser correlation. The runtime binds it server-side to `transaction_ref`. `state` MUST NOT be required to equal `transaction_ref`.
 
 The PKCE verifier uses the RFC 7636 verifier grammar: ASCII unreserved characters, 43 to 128 characters. The challenge is `BASE64URL(SHA256(ASCII(verifier)))` with no padding. `plain` is rejected.
@@ -97,6 +99,8 @@ The authorization request MUST NOT carry, and the browser MUST NOT be shown:
 ### 5.2 Authorization response
 
 Success fields are only `code` and `state`. Denial fields are only one safe OAuth error and `state`.
+
+The callback `state` MUST equal the exact `state` stored for the originating authorization request. A well-formed `state` from another handoff is rejected. The two-key query shape is not sufficient.
 
 The safe error enum is `invalid_request`, `unauthorized_client`, `access_denied`, `unsupported_response_type`, `server_error`, `temporarily_unavailable`.
 
@@ -165,7 +169,7 @@ Issuer mismatch is `unverified` and machine code `ISSUER_MISMATCH`. Audience mis
 
 ## 8. Destination and redirect
 
-A destination is validated in two steps. First, reject the original string when it contains whitespace, a control character, a backslash, an asterisk, a query, or a fragment, or when the authority has user information, an empty port, a non-canonical port, or a non-canonical IPv4 literal. Second, parse that same original string with a standards-compliant URL parser. The parser accepts a nonempty host and a well-formed IPv6 literal. An embedded IPv4 is accepted only in the legal final 32-bit position; any other embedded IPv4 is rejected by the parser. If the parser reads the host as IPv4, the original host spelling MUST already be that canonical dotted-decimal address. Hexadecimal, octal, integer, mixed-base, and any other spelling the parser rewrites into IPv4 are rejected. A path the parser would rewrite, including dot segments, is rejected. A path with empty segments, including `/a//callback`, is valid. A legitimate port, including an explicit port that a parser would omit from its serialized form, is valid.
+A destination is validated in two steps. First, reject the original string when it contains whitespace, a control character, a backslash, an asterisk, a query, or a fragment, or when the authority has user information, an empty port, a non-canonical port, or a non-canonical IPv4 literal. Second, parse that same original string with a standards-compliant URL parser. The parser accepts a nonempty host and a well-formed IPv6 literal. An embedded IPv4 is accepted only in the legal final 32-bit position; any other embedded IPv4 is rejected by the parser. If the parser reads the host as IPv4, the original host spelling MUST already be that canonical dotted-decimal address. Hexadecimal, octal, integer, mixed-base, and any other spelling the parser rewrites into IPv4 are rejected. A path the parser would rewrite, including dot segments, is rejected. A path with empty segments, including `/a//callback`, is valid. A legitimate port, including an explicit port that a parser would omit from its serialized form, is valid. A DNS label may begin with a digit, including `3com` and `service.3com`. A host of only digits and dots, and a label that is a hexadecimal integer (`0x` plus hex digits), remains excluded.
 
 IPv6 syntax is the parser's syntax. This contract does not publish a partial IPv6 grammar.
 
@@ -195,7 +199,7 @@ Required public fields: `registration_version`, `issuer`, `client_ref`, `receive
 
 The permitted algorithm set is `RS256`, `RS384`, `RS512`, `ES256`, `ES384`, `ES512`, and `EdDSA`. Registration MUST NOT allow any other algorithm.
 
-Registration contains public verification material only. It MUST NOT contain receiver role, receiver membership, grant, permission, receiver session authority, private JWK material, or a source or client secret. Caller-supplied key URLs are not trust. `jku`, `x5u`, and embedded private parameters are rejected.
+Registration contains public verification material only. It MUST NOT contain receiver role, receiver membership, grant, permission, receiver session authority, private JWK material, or a source or client secret. Caller-supplied key URLs are not trust. `jku`, `x5u`, and embedded private parameters are rejected. Private JWK members include `d`, `p`, `q`, `dp`, `dq`, `qi`, `oth`, and `k`. A key that carries `oth` is not a public verification key, even when a signature over the public `n` and `e` would otherwise verify.
 
 `status` `disabled` is machine code `CLIENT_DISABLED`. `revoked` is `CLIENT_REVOKED`. A client that is not the registered client is `UNKNOWN_CLIENT`. Each of those results forbids redirect to the supplied destination.
 
@@ -214,7 +218,7 @@ The object MUST NOT carry passwords, bearer tokens, authorization codes, PKCE ve
 | Field | Objects | Comparison | Does not mean |
 | --- | --- | --- | --- |
 | `purpose` | initiation, authorization request, redemption request, authorization-code record, context, registration | exact string | an operational data API |
-| `state` | authorization request and response | server-side binding to `transaction_ref` | equality with `transaction_ref` |
+| `state` | authorization request and response | exact equality with the stored authorization-request state | equality with `transaction_ref` |
 | `code_challenge` | authorization request | S256 of the server-side verifier | the verifier itself |
 | `code_verifier` | redemption request | RFC 7636, server-side only | a browser parameter |
 | `authorization_code` / `code` | redemption request / callback | opaque, single-use, at least 128 bits, at most 60 seconds | a receiver session |
@@ -236,7 +240,7 @@ Schema validity is necessary and not sufficient. Conforming evaluation of a boun
 2. If the peer `contract_family`, `contract_version`, or `profile` is not this published triple, the outcome is `unsupported_version`. `UNSUPPORTED_PROFILE` applies to a profile mismatch. `UNSUPPORTED_CONTRACT_VERSION` applies to either a contract-family mismatch or a contract-version mismatch.
 3. If a scope or permission element is structurally illegal — not a string, an empty string, or whitespace — the outcome is `malformed`. This classification precedes semantic scope classification.
 4. If a record-scope array or `source_permission_refs` is an empty set, duplicated, wildcarded, not in ascending UTF-16 code-unit order, or contains a bound that is a proper prefix of another, or if context record scopes are not a subset of the initiation request, the outcome is `scope_invalid` and the machine code is `RECORD_SCOPE_INVALID`.
-5. If the peer object otherwise fails schema validation, a timestamp is not a calendar-valid UTC instant, or `destination_uri` fails section 8, the outcome is `malformed`.
+5. If a schema-validation flag is not exactly `true`, the peer object otherwise fails schema validation, a timestamp is not a calendar-valid UTC instant, or `destination_uri` fails section 8, the outcome is `malformed`. An omitted or undefined schema-validation flag fails closed.
 6. If the code was already consumed and this attempt is not an uncertain reconciliation of the same complete authenticated context, the outcome is `replayed`. Reconciliation MUST still pass the lifetime, revocation, binding, presentation, attestation, and source-bound rules below. A difference in any normative field fails closed as `replayed` and MUST NOT mint another receiver session.
 7. If a lifetime is inverted, non-positive, or over the profile maximum, if context `issued_at` falls outside the initiation code window, if the context outlives the source session, or if the evaluation instant is at or after the context `expires_at`, the outcome is `expired`. Allowed clock skew is 0 seconds. An evaluation instant before `issued_at` is `unverified`. Elapse of the code window after a timely `issued_at` does not by itself expire the context. Lifetime comparison retains full fractional-second precision. Exactly 60 seconds is within the code maximum. Exactly 300 seconds is within the context maximum. Any greater duration is expired.
 8. If issuer, audience, receiver, client, destination, handoff, transaction, correlation, or purpose binding does not match, or the issuer attestation is revoked, the outcome is `unverified`.
