@@ -8,6 +8,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import {
   assessRedemption,
   assessSourceSessionHandoff,
+  authorizationRequestDestinationAccepted,
   browserCallbackQueryAllowed,
   browserProhibitedFields,
   compareInstants,
@@ -1124,6 +1125,8 @@ test("source-session-handoff destination uris require a real https authority", a
     "https://[2001:db8::1]/session-handoff/callback",
     "https://[::1]:8443/callback",
     "https://192.0.2.10/callback",
+    "https://3com/callback",
+    "https://service.3com/callback",
     "https://[::ffff:192.0.2.1]/callback",
     "https://[0:0:0:0:0:0:0:1]/callback",
     "https://receiver.example/a//callback",
@@ -1383,12 +1386,27 @@ test("source-session-handoff authorization callback and pkce shapes are closed",
     assert.equal(redeemed.retryable, false);
     assertNoSession(redeemed);
   });
-  await t.test("browser callback contains only safe fields", () => {
-    assert.equal(browserCallbackQueryAllowed(success), true);
-    assert.equal(browserCallbackQueryAllowed(denial), true);
-    assert.equal(browserCallbackQueryAllowed({ ...success, subject_ref: "subject-placeholder-001" }), false);
-    assert.equal(browserCallbackQueryAllowed({ error: "invalid_scope", state: success.state }), false);
-    assert.equal(browserCallbackQueryAllowed({ error: "access_denied", state: success.state, error_description: "no" }), false);
+  await t.test("browser callback contains only safe fields bound to the request state", () => {
+    assert.equal(browserCallbackQueryAllowed(success, request.state), true);
+    assert.equal(browserCallbackQueryAllowed(denial, request.state), true);
+    assert.equal(browserCallbackQueryAllowed(success), false);
+    assert.equal(browserCallbackQueryAllowed(success, "state-from-another-handoff"), false);
+    assert.equal(browserCallbackQueryAllowed({ ...success, state: "state-from-another-handoff" }, request.state), false);
+    assert.equal(browserCallbackQueryAllowed({ ...success, subject_ref: "subject-placeholder-001" }, request.state), false);
+    assert.equal(browserCallbackQueryAllowed({ error: "invalid_scope", state: success.state }, request.state), false);
+    assert.equal(browserCallbackQueryAllowed({ error: "access_denied", state: success.state, error_description: "no" }, request.state), false);
+  });
+  await t.test("authorization request destination is semantically validated", () => {
+    assert.equal(authorizationRequestDestinationAccepted(request), true);
+    const malformedIpv6 = structuredClone(request);
+    malformedIpv6.destination_uri = "https://[:::1]/callback";
+    assert.equal(validateRequest(malformedIpv6), true);
+    assert.equal(destinationUriValid(malformedIpv6.destination_uri), false);
+    assert.equal(authorizationRequestDestinationAccepted(malformedIpv6), false);
+    const digitLeading = structuredClone(request);
+    digitLeading.destination_uri = "https://service.3com/callback";
+    assert.equal(validateRequest(digitLeading), true);
+    assert.equal(authorizationRequestDestinationAccepted(digitLeading), true);
   });
   await t.test("browser-sensitive fields are absent from the authorization request", () => {
     const schema = loadJson(AUTHZ_REQUEST_SCHEMA);
@@ -1651,6 +1669,16 @@ test("source-session-handoff redemption issues one context and consumes the code
     const rsaRegistration = registrationWithKeys([rsaJwk], ["RS256"]);
     const rsaSigned = signedAssertion({ alg: "RS256", kid: rsaJwk.kid }, context, rsa.privateKey);
     assert.equal(redemptionResponseMatchesContext({ ...issued, assertion: rsaSigned }, context, rsaRegistration), true);
+    const multiPrime = structuredClone(rsaJwk);
+    multiPrime.oth = [{ r: "AA", d: "AA", t: "AA" }];
+    assert.equal(
+      redemptionResponseMatchesContext(
+        { ...issued, assertion: rsaSigned },
+        context,
+        registrationWithKeys([multiPrime], ["RS256"]),
+      ),
+      false,
+    );
     const ecAsRsa = registrationWithKeys([ecJwk], ["ES256", "RS256"]);
     assert.equal(
       redemptionResponseMatchesContext({ ...issued, assertion: compactWithHeader({ alg: "RS256", kid: ecJwk.kid }, context) }, context, ecAsRsa),
@@ -1928,6 +1956,30 @@ test("source-session-handoff context lifetime cannot use skew or outlive the sou
   assert.equal(equalEnd.failure, null);
   assert.equal(equalEnd.contextAccepted, true);
   assertNoSession(equalEnd);
+});
+
+test("source-session-handoff schema validity must be affirmative", () => {
+  const base = presentationOf();
+  const omitted = { ...base };
+  delete omitted.schemaValidInitiation;
+  delete omitted.schemaValidContext;
+  const omittedResult = assessSourceSessionHandoff(omitted);
+  assert.equal(omittedResult.failure, "malformed");
+  assert.equal(omittedResult.contextAccepted, false);
+  assertNoSession(omittedResult);
+  for (const flags of [
+    { schemaValidInitiation: undefined, schemaValidContext: undefined },
+    { schemaValidInitiation: true, schemaValidContext: undefined },
+    { schemaValidInitiation: undefined, schemaValidContext: true },
+  ]) {
+    const result = assessSourceSessionHandoff({ ...base, ...flags });
+    assert.equal(result.failure, "malformed");
+    assert.equal(result.contextAccepted, false);
+    assertNoSession(result);
+  }
+  const accepted = assessSourceSessionHandoff(base);
+  assert.equal(accepted.failure, null);
+  assert.equal(accepted.contextAccepted, true);
 });
 
 test("source-session-handoff registration is public verification material only", () => {
