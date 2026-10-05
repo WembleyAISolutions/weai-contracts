@@ -1672,7 +1672,19 @@ test("source-session-handoff redemption issues one context and consumes the code
     };
     assert.equal(accept(context), true);
     assert.equal(accept({ ...structuredClone(context), iss: context.issuer }), false);
+    assert.equal(accept({ ...structuredClone(context), aud: context.audience }), false);
+    assert.equal(accept({ ...structuredClone(context), client_id: context.client_ref }), false);
     assert.equal(accept({ ...structuredClone(context), extension_field: "not-admitted" }), false);
+    const sameKeyWrongIssuer = structuredClone(edRegistration);
+    sameKeyWrongIssuer.issuer = "issuer-placeholder-002";
+    assert.equal(
+      redemptionResponseMatchesContext(
+        { ...structuredClone(response), assertion: signedAssertion(header, context, ed.privateKey) },
+        context,
+        sameKeyWrongIssuer,
+      ),
+      false,
+    );
     for (const field of ["subject_ref", "source_session_ref", "source_context_ref"]) {
       const missing = structuredClone(context);
       delete missing[field];
@@ -1684,6 +1696,9 @@ test("source-session-handoff redemption issues one context and consumes the code
     const wildcard = structuredClone(context);
     wildcard.record_scope_refs = ["*"];
     assert.equal(accept(wildcard), false);
+    const malformedScope = structuredClone(context);
+    malformedScope.record_scope_refs = [1];
+    assert.equal(accept(malformedScope), false);
     const unsorted = structuredClone(context);
     unsorted.source_permission_refs = [
       "source-permission-placeholder-002",
@@ -1719,6 +1734,22 @@ test("source-session-handoff redemption issues one context and consumes the code
     assert.equal(exact.codeConsumed, true);
     assertNoSession(exact);
 
+    const shorter = judge({
+      issued_at: "2026-08-15T00:00:00Z",
+      expires_at: "2026-08-15T00:00:30Z",
+    }, "2026-08-15T00:00:15Z");
+    assert.equal(shorter.failure, null);
+    assert.equal(shorter.codeConsumed, true);
+    assertNoSession(shorter);
+
+    const exactFraction = judge({
+      issued_at: "2026-08-15T00:00:00.0000000001Z",
+      expires_at: "2026-08-15T00:01:00.0000000001Z",
+    });
+    assert.equal(exactFraction.failure, null);
+    assert.equal(exactFraction.codeConsumed, true);
+    assertNoSession(exactFraction);
+
     const fractional = judge({
       issued_at: "2026-08-15T00:00:00.0000000000Z",
       expires_at: "2026-08-15T00:01:00.0000000001Z",
@@ -1740,8 +1771,18 @@ test("source-session-handoff redemption issues one context and consumes the code
       expires_at: "2026-08-15T00:05:00Z",
     }, "2026-08-15T00:01:00Z");
     assert.equal(fiveMinutes.code, "CODE_EXPIRED");
+    assert.equal(fiveMinutes.failure, "expired");
     assert.equal(fiveMinutes.codeConsumed, false);
     assertNoSession(fiveMinutes);
+
+    const hours = judge({
+      issued_at: "2026-08-15T00:00:00Z",
+      expires_at: "2026-08-15T02:00:00Z",
+    });
+    assert.equal(hours.code, "CODE_EXPIRED");
+    assert.equal(hours.failure, "expired");
+    assert.equal(hours.codeConsumed, false);
+    assertNoSession(hours);
 
     const oneYear = judge({
       issued_at: "2026-08-15T00:00:00Z",
@@ -1760,8 +1801,15 @@ test("source-session-handoff redemption issues one context and consumes the code
 
     const malformed = judge({ issued_at: "2026-02-30T00:00:00Z" });
     assert.equal(malformed.code, "MALFORMED_REQUEST");
+    assert.equal(malformed.failure, "malformed");
     assert.equal(malformed.codeConsumed, false);
     assertNoSession(malformed);
+
+    const malformedExpiry = judge({ expires_at: "2026-02-30T00:01:00Z" });
+    assert.equal(malformedExpiry.code, "MALFORMED_REQUEST");
+    assert.equal(malformedExpiry.failure, "malformed");
+    assert.equal(malformedExpiry.codeConsumed, false);
+    assertNoSession(malformedExpiry);
 
     const equalBounds = judge({
       issued_at: "2026-08-15T00:00:30Z",
@@ -1806,8 +1854,26 @@ test("source-session-handoff redemption issues one context and consumes the code
       expires_at: "2026-08-15T00:01:00Z",
     }, "2026-08-15T00:01:00Z");
     assert.equal(atEnd.code, "CODE_EXPIRED");
+    assert.equal(atEnd.failure, "expired");
     assert.equal(atEnd.codeConsumed, false);
     assertNoSession(atEnd);
+
+    const afterEnd = judge({
+      issued_at: "2026-08-15T00:00:00Z",
+      expires_at: "2026-08-15T00:01:00Z",
+    }, "2026-08-15T00:01:01Z");
+    assert.equal(afterEnd.code, "CODE_EXPIRED");
+    assert.equal(afterEnd.failure, "expired");
+    assert.equal(afterEnd.codeConsumed, false);
+    assertNoSession(afterEnd);
+
+    const lowYear = judge({
+      issued_at: "0099-12-31T23:59:30Z",
+      expires_at: "0100-01-01T00:00:00Z",
+    }, "0099-12-31T23:59:45Z");
+    assert.equal(lowYear.failure, null);
+    assert.equal(lowYear.codeConsumed, true);
+    assertNoSession(lowYear);
 
     const once = redemptionOf();
     assert.equal(once.failure, null);
