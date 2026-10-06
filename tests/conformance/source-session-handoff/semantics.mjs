@@ -714,6 +714,14 @@ export function authorizationRequestDestinationAccepted(request) {
   return destinationUriValid(request.destination_uri);
 }
 
+export function registrationEndpointsAccepted(registration) {
+  if (registration === null || typeof registration !== "object" || Array.isArray(registration)) {
+    return false;
+  }
+  return destinationUriValid(registration.authorization_endpoint)
+    && destinationUriValid(registration.token_endpoint);
+}
+
 export function browserCallbackQueryAllowed(params, expectedState) {
   if (typeof expectedState !== "string" || expectedState.length === 0) {
     return false;
@@ -726,7 +734,7 @@ export function browserCallbackQueryAllowed(params, expectedState) {
     return false;
   }
   if (Object.hasOwn(params, "code") && !Object.hasOwn(params, "error")) {
-    return true;
+    return typeof params.code === "string" && /^[A-Za-z0-9\-._~]{22,512}$/.test(params.code);
   }
   return Object.hasOwn(params, "error")
     && !Object.hasOwn(params, "code")
@@ -738,6 +746,9 @@ export function registrationPermitsRedirect(registration, clientRef, destination
     return false;
   }
   if (registration.status !== "enabled" || registration.client_ref !== clientRef) {
+    return false;
+  }
+  if (!registrationEndpointsAccepted(registration)) {
     return false;
   }
   if (!destinationUriValid(destination) || !Array.isArray(registration.destination_uris)) {
@@ -937,6 +948,7 @@ function registrationBindsContext(registration, context) {
     return false;
   }
   return registration.status === "enabled"
+    && registrationEndpointsAccepted(registration)
     && context.contract_family === FAMILY
     && context.contract_version === VERSION
     && context.profile === PROFILE
@@ -1021,7 +1033,7 @@ export function assessRedemption(input) {
   if (request.profile !== PROFILE) {
     return machineResult("UNSUPPORTED_PROFILE");
   }
-  if (constantsUnsupported(request) || input.schemaValidRequest === false) {
+  if (constantsUnsupported(request) || input.schemaValidRequest !== true) {
     return machineResult("MALFORMED_REQUEST");
   }
   if (!destinationUriValid(request.destination_uri) || !pkceVerifierValid(request.code_verifier)) {

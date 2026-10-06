@@ -100,7 +100,7 @@ The authorization request MUST NOT carry, and the browser MUST NOT be shown:
 
 Success fields are only `code` and `state`. Denial fields are only one safe OAuth error and `state`.
 
-The callback `state` MUST equal the exact `state` stored for the originating authorization request. A well-formed `state` from another handoff is rejected. The two-key query shape is not sufficient.
+The callback `state` MUST equal the exact `state` stored for the originating authorization request. A well-formed `state` from another handoff is rejected. The two-key query shape is not sufficient. A success `code` MUST be an authorization-code string of unreserved characters, 22 to 512 characters. `null`, an empty string, and a non-string are rejected.
 
 The safe error enum is `invalid_request`, `unauthorized_client`, `access_denied`, `unsupported_response_type`, `server_error`, `temporarily_unavailable`.
 
@@ -175,7 +175,7 @@ IPv6 syntax is the parser's syntax. This contract does not publish a partial IPv
 
 After syntactic validation, registered destination matching is byte-for-byte equality of the original strings. No canonicalisation is applied before that comparison. Host case, an explicit port, and IPv6 spelling are significant.
 
-The same syntax applies to `authorization_endpoint` and `token_endpoint`.
+The same syntax applies to `authorization_endpoint` and `token_endpoint`. Both MUST pass this semantic validation. The structural schema pattern is only a screen, so a bracketed host such as `https://[:::1]/callback` is not an accepted endpoint.
 
 ## 9. Browser persistence
 
@@ -240,7 +240,7 @@ Schema validity is necessary and not sufficient. Conforming evaluation of a boun
 2. If the peer `contract_family`, `contract_version`, or `profile` is not this published triple, the outcome is `unsupported_version`. `UNSUPPORTED_PROFILE` applies to a profile mismatch. `UNSUPPORTED_CONTRACT_VERSION` applies to either a contract-family mismatch or a contract-version mismatch.
 3. If a scope or permission element is structurally illegal — not a string, an empty string, or whitespace — the outcome is `malformed`. This classification precedes semantic scope classification.
 4. If a record-scope array or `source_permission_refs` is an empty set, duplicated, wildcarded, not in ascending UTF-16 code-unit order, or contains a bound that is a proper prefix of another, or if context record scopes are not a subset of the initiation request, the outcome is `scope_invalid` and the machine code is `RECORD_SCOPE_INVALID`.
-5. If a schema-validation flag is not exactly `true`, the peer object otherwise fails schema validation, a timestamp is not a calendar-valid UTC instant, or `destination_uri` fails section 8, the outcome is `malformed`. An omitted or undefined schema-validation flag fails closed.
+5. If a schema-validation flag is not exactly `true`, the peer object otherwise fails schema validation, a timestamp is not a calendar-valid UTC instant, or `destination_uri` fails section 8, the outcome is `malformed`. An omitted or undefined schema-validation flag fails closed. Redemption uses the same rule for `schemaValidRequest`: after family, version, and profile classification, anything other than exactly `true` is `MALFORMED_REQUEST` and does not consume the code.
 6. If the code was already consumed and this attempt is not an uncertain reconciliation of the same complete authenticated context, the outcome is `replayed`. Reconciliation MUST still pass the lifetime, revocation, binding, presentation, attestation, and source-bound rules below. A difference in any normative field fails closed as `replayed` and MUST NOT mint another receiver session.
 7. If a lifetime is inverted, non-positive, or over the profile maximum, if context `issued_at` falls outside the initiation code window, if the context outlives the source session, or if the evaluation instant is at or after the context `expires_at`, the outcome is `expired`. Allowed clock skew is 0 seconds. An evaluation instant before `issued_at` is `unverified`. Elapse of the code window after a timely `issued_at` does not by itself expire the context. Lifetime comparison retains full fractional-second precision. Exactly 60 seconds is within the code maximum. Exactly 300 seconds is within the context maximum. Any greater duration is expired.
 8. If issuer, audience, receiver, client, destination, handoff, transaction, correlation, or purpose binding does not match, or the issuer attestation is revoked, the outcome is `unverified`.
