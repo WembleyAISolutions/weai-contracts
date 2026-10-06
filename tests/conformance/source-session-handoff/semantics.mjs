@@ -270,7 +270,20 @@ function authorityPrecheck(authority) {
   if (/^[0-9.]+$/.test(split.host) && !canonicalIpv4(split.host)) {
     return false;
   }
+  if (profileHostnameExcluded(split.host)) {
+    return false;
+  }
   return true;
+}
+
+function profileHostnameExcluded(host) {
+  if (host.startsWith("[")) {
+    return false;
+  }
+  if (host.includes("%")) {
+    return true;
+  }
+  return host.split(".").some((label) => /^0[xX][0-9A-Fa-f]+$/.test(label));
 }
 
 export function destinationUriValid(value) {
@@ -410,16 +423,20 @@ function sortedAscending(arr) {
   return arr.every((item, index) => item === sorted[index]);
 }
 
-function ambiguousPrefix(arr) {
-  const sorted = [...arr].sort();
-  for (let i = 0; i < sorted.length; i += 1) {
-    for (let j = i + 1; j < sorted.length; j += 1) {
-      if (sorted[j].startsWith(sorted[i])) {
-        return true;
-      }
+export function prefixScanEvidence(values) {
+  const sorted = [...values].sort();
+  let comparisons = 0;
+  for (let i = 1; i < sorted.length; i += 1) {
+    comparisons += 1;
+    if (sorted[i].startsWith(sorted[i - 1])) {
+      return { ambiguous: true, comparisons };
     }
   }
-  return false;
+  return { ambiguous: false, comparisons };
+}
+
+function ambiguousPrefix(arr) {
+  return prefixScanEvidence(arr).ambiguous;
 }
 
 export function scopeElementsStructurallyIllegal(arr) {
@@ -497,7 +514,7 @@ export function bindingMismatch(initiation, context) {
 function issuedInsideCodeWindow(initiation, context) {
   const afterStart = compareInstants(initiation.initiated_at, context.issued_at);
   const beforeEnd = compareInstants(context.issued_at, initiation.expires_at);
-  return afterStart !== null && beforeEnd !== null && afterStart <= 0 && beforeEnd <= 0;
+  return afterStart !== null && beforeEnd !== null && afterStart <= 0 && beforeEnd < 0;
 }
 
 function lifetimeFailure(initiation, context, at, sourceSessionExpiresAt) {
@@ -728,7 +745,7 @@ export function browserCallbackQueryAllowed(params, expectedState) {
     return false;
   }
   if (Object.hasOwn(params, "code") && !Object.hasOwn(params, "error")) {
-    return typeof params.code === "string" && /^[A-Za-z0-9\-._~]{22,512}$/.test(params.code);
+    return authorizationCodeWellFormed(params.code);
   }
   return Object.hasOwn(params, "error")
     && !Object.hasOwn(params, "code")
@@ -751,6 +768,19 @@ export function registrationPermitsRedirect(registration, clientRef, destination
   return registration.destination_uris.some((item) => item === destination);
 }
 
+function jsonValueFromBase64Url(segment) {
+  const bytes = Buffer.from(segment, "base64url");
+  const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  if (text.length > 0 && text.charCodeAt(0) === 0xfeff) {
+    throw new Error("leading UTF-8 BOM");
+  }
+  return JSON.parse(text);
+}
+
+function authorizationCodeWellFormed(value) {
+  return typeof value === "string" && /^[A-Za-z0-9\-._~]{22,512}$/.test(value);
+}
+
 export function inspectCompactJws(assertion) {
   if (typeof assertion !== "string") {
     return null;
@@ -760,8 +790,8 @@ export function inspectCompactJws(assertion) {
     return null;
   }
   try {
-    const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
-    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    const header = jsonValueFromBase64Url(parts[0]);
+    const payload = jsonValueFromBase64Url(parts[1]);
     if (header === null || typeof header !== "object" || Array.isArray(header)) {
       return null;
     }
@@ -1030,7 +1060,11 @@ export function assessRedemption(input) {
   if (constantsUnsupported(request) || input.schemaValidRequest !== true) {
     return machineResult("MALFORMED_REQUEST");
   }
-  if (!destinationUriValid(request.destination_uri) || !pkceVerifierValid(request.code_verifier)) {
+  if (
+    !destinationUriValid(request.destination_uri)
+    || !pkceVerifierValid(request.code_verifier)
+    || !authorizationCodeWellFormed(request.authorization_code)
+  ) {
     return machineResult("MALFORMED_REQUEST");
   }
   if (input.codeChallengeMethod !== "S256") {
@@ -1056,7 +1090,14 @@ export function assessRedemption(input) {
     return machineResult("DESTINATION_MISMATCH");
   }
   const record = input.codeRecord;
-  if (record === null || record === undefined) {
+  if (
+    record === null
+    || typeof record !== "object"
+    || Array.isArray(record)
+    || !Object.hasOwn(record, "authorization_code")
+    || !authorizationCodeWellFormed(record.authorization_code)
+    || record.authorization_code !== request.authorization_code
+  ) {
     return machineResult("CODE_UNKNOWN");
   }
   if (record.code_challenge_method !== "S256") {
@@ -1082,6 +1123,9 @@ export function assessRedemption(input) {
   const beforeExpiry = compareInstants(input.now, record.expires_at);
   if (afterIssued === null || beforeExpiry === null || afterIssued > 0 || beforeExpiry >= 0) {
     return machineResult("CODE_EXPIRED");
+  }
+  if (typeof record.consumed !== "boolean") {
+    return machineResult("MALFORMED_REQUEST");
   }
   if (record.consumed === true) {
     return machineResult("CODE_REPLAYED");
