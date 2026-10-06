@@ -152,6 +152,28 @@ export function instantParts(ts) {
   };
 }
 
+function compareFractionDigits(left, right) {
+  const shared = Math.min(left.length, right.length);
+  for (let i = 0; i < shared; i += 1) {
+    const leftDigit = left.charCodeAt(i);
+    const rightDigit = right.charCodeAt(i);
+    if (leftDigit < rightDigit) {
+      return -1;
+    }
+    if (leftDigit > rightDigit) {
+      return 1;
+    }
+  }
+  const longer = left.length > right.length ? left : right;
+  const sign = left.length === right.length ? 0 : (left.length > right.length ? 1 : -1);
+  for (let i = shared; i < longer.length; i += 1) {
+    if (longer.charCodeAt(i) !== 48) {
+      return sign;
+    }
+  }
+  return 0;
+}
+
 export function compareInstants(leftTs, rightTs) {
   const left = instantParts(leftTs);
   const right = instantParts(rightTs);
@@ -164,16 +186,7 @@ export function compareInstants(leftTs, rightTs) {
   if (left.seconds > right.seconds) {
     return 1;
   }
-  const width = Math.max(left.fraction.length, right.fraction.length);
-  const leftFrac = left.fraction.padEnd(width, "0");
-  const rightFrac = right.fraction.padEnd(width, "0");
-  if (leftFrac < rightFrac) {
-    return -1;
-  }
-  if (leftFrac > rightFrac) {
-    return 1;
-  }
-  return 0;
+  return compareFractionDigits(left.fraction, right.fraction);
 }
 
 export function durationWithin(start, end, maxSeconds) {
@@ -183,25 +196,17 @@ export function durationWithin(start, end, maxSeconds) {
     return false;
   }
   let whole = right.seconds - left.seconds;
-  const width = Math.max(left.fraction.length, right.fraction.length);
-  let frac = 0n;
-  if (width > 0) {
-    const scale = 10n ** BigInt(width);
-    const leftFrac = BigInt(left.fraction.padEnd(width, "0"));
-    const rightFrac = BigInt(right.fraction.padEnd(width, "0"));
-    frac = rightFrac - leftFrac;
-    if (frac < 0n) {
-      whole -= 1n;
-      frac += scale;
-    }
+  const fractionOrder = compareFractionDigits(left.fraction, right.fraction);
+  if (fractionOrder > 0) {
+    whole -= 1n;
   }
-  if (whole < 0n || (whole === 0n && frac === 0n)) {
+  if (whole < 0n || (whole === 0n && fractionOrder === 0)) {
     return false;
   }
   if (whole > maxSeconds) {
     return false;
   }
-  if (whole === maxSeconds && frac > 0n) {
+  if (whole === maxSeconds && fractionOrder !== 0) {
     return false;
   }
   return true;
@@ -682,21 +687,10 @@ export function integralSecondLifetime(start, end) {
   if (left === null || right === null) {
     return null;
   }
-  let whole = right.seconds - left.seconds;
-  const width = Math.max(left.fraction.length, right.fraction.length);
-  if (width > 0) {
-    const scale = 10n ** BigInt(width);
-    const leftFrac = BigInt(left.fraction.padEnd(width, "0"));
-    const rightFrac = BigInt(right.fraction.padEnd(width, "0"));
-    let frac = rightFrac - leftFrac;
-    if (frac < 0n) {
-      whole -= 1n;
-      frac += scale;
-    }
-    if (frac !== 0n) {
-      return null;
-    }
+  if (compareFractionDigits(left.fraction, right.fraction) !== 0) {
+    return null;
   }
+  const whole = right.seconds - left.seconds;
   if (whole <= 0n) {
     return null;
   }
@@ -1053,6 +1047,9 @@ export function assessRedemption(input) {
     return machineResult("CLIENT_REVOKED");
   }
   if (registration.status !== "enabled") {
+    return machineResult("UNKNOWN_CLIENT");
+  }
+  if (!registrationEndpointsAccepted(registration)) {
     return machineResult("UNKNOWN_CLIENT");
   }
   if (!Array.isArray(registration.destination_uris) || !registration.destination_uris.includes(request.destination_uri)) {
