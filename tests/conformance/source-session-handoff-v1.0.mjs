@@ -1010,6 +1010,8 @@ test("source-session-handoff utc instants keep calendar and fractional precision
   assert.equal(/\bDate\s*\./.test(engine), false);
   assert.equal(/new\s+Date\s*\(/.test(engine), false);
   assert.equal(engine.includes("Date.parse"), false);
+  assert.equal(engine.includes("10n **"), false);
+  assert.equal(engine.includes("padEnd"), false);
 
   const legacyStart = Date.UTC(99, 11, 31, 23, 59, 30);
   const legacyEnd = Date.UTC(100, 0, 1, 0, 0, 0);
@@ -1050,6 +1052,60 @@ test("source-session-handoff utc instants keep calendar and fractional precision
       durationWithin("2026-08-15T00:00:20Z", "2026-08-15T00:05:20.0000000001Z", CONTEXT_WINDOW_SECONDS),
       false,
     );
+    assert.equal(
+      durationWithin("2026-08-15T00:00:00.900Z", "2026-08-15T00:00:01.100Z", CODE_WINDOW_SECONDS),
+      true,
+    );
+    assert.equal(
+      integralSecondLifetime("2026-08-15T00:00:00.900Z", "2026-08-15T00:00:01.100Z"),
+      null,
+    );
+    assert.equal(
+      integralSecondLifetime("2026-08-15T00:00:00.0001Z", "2026-08-15T00:01:00.0001Z"),
+      60n,
+    );
+    assert.equal(
+      integralSecondLifetime("2026-08-15T00:00:00.0001Z", "2026-08-15T00:01:00.0002Z"),
+      null,
+    );
+  });
+  await t.test("long fractional digits stay exact without scaled integers", () => {
+    const digits = "1".repeat(10000);
+    const lastDiffers = `${"1".repeat(9999)}2`;
+    const equalStart = `2026-08-15T00:00:00.${digits}Z`;
+    const equalSame = `2026-08-15T00:00:00.${digits}Z`;
+    const greater = `2026-08-15T00:00:00.${lastDiffers}Z`;
+    assert.equal(compareInstants(equalStart, equalSame), 0);
+    assert.equal(compareInstants(equalStart, greater), -1);
+    assert.equal(compareInstants(greater, equalStart), 1);
+
+    const codeExact = `2026-08-15T00:01:00.${digits}Z`;
+    const codeEpsilon = `2026-08-15T00:01:00.${lastDiffers}Z`;
+    assert.equal(durationWithin(equalStart, codeExact, CODE_WINDOW_SECONDS), true);
+    assert.equal(integralSecondLifetime(equalStart, codeExact), 60n);
+    assert.equal(durationWithin(equalStart, codeEpsilon, CODE_WINDOW_SECONDS), false);
+    assert.equal(integralSecondLifetime(equalStart, codeEpsilon), null);
+    const exactCode = redemptionOf({
+      record: { issued_at: equalStart, expires_at: codeExact },
+      now: "2026-08-15T00:00:30Z",
+    });
+    assert.equal(exactCode.failure, null);
+    assert.equal(exactCode.codeConsumed, true);
+    const overCode = redemptionOf({
+      record: { issued_at: equalStart, expires_at: codeEpsilon },
+      now: "2026-08-15T00:00:30Z",
+    });
+    assert.equal(overCode.code, "CODE_EXPIRED");
+    assert.equal(overCode.failure, "expired");
+    assert.equal(overCode.codeConsumed, false);
+
+    const contextStart = `2026-08-15T00:00:20.${digits}Z`;
+    const contextExact = `2026-08-15T00:05:20.${digits}Z`;
+    const contextEpsilon = `2026-08-15T00:05:20.${lastDiffers}Z`;
+    assert.equal(durationWithin(contextStart, contextExact, CONTEXT_WINDOW_SECONDS), true);
+    assert.equal(integralSecondLifetime(contextStart, contextExact), 300n);
+    assert.equal(durationWithin(contextStart, contextEpsilon, CONTEXT_WINDOW_SECONDS), false);
+    assert.equal(integralSecondLifetime(contextStart, contextEpsilon), null);
   });
   await t.test("low-year code window is accepted by the handoff oracle", () => {
     const initiation = structuredClone(loadJson(INITIATION_EXAMPLE));
@@ -2078,4 +2134,56 @@ test("source-session-handoff registration is public verification material only",
     ),
     false,
   );
+});
+
+test("source-session-handoff redemption requires canonical registration endpoints", () => {
+  const accepted = redemptionOf();
+  assert.equal(accepted.failure, null);
+  assert.equal(accepted.codeConsumed, true);
+  const replay = redemptionOf({ record: { consumed: true } });
+  assert.equal(replay.code, "CODE_REPLAYED");
+  assert.equal(replay.codeConsumed, false);
+
+  for (const [authorizationEndpoint, tokenEndpoint] of [
+    ["https://issuer.example/oauth/authorize", "https://issuer.example/oauth/token"],
+    ["https://issuer.example/oauth//authorize", "https://issuer.example/oauth/token"],
+    ["https://issuer.example:8443/oauth/authorize", "https://issuer.example/oauth/token"],
+    ["https://[2001:db8::1]/oauth/authorize", "https://[2001:db8::1]/oauth/token"],
+  ]) {
+    const registration = publishedRegistration();
+    registration.authorization_endpoint = authorizationEndpoint;
+    registration.token_endpoint = tokenEndpoint;
+    const result = redemptionOf({ registration });
+    assert.equal(result.failure, null, `${authorizationEndpoint} ${tokenEndpoint}`);
+    assert.equal(result.codeConsumed, true, `${authorizationEndpoint} ${tokenEndpoint}`);
+    assertNoSession(result);
+  }
+
+  const rejected = [
+    "https://[:::1]/callback",
+    "https://0x7f.0.0.1/callback",
+    "https://issuer.example/oauth/authorize?x=1",
+    "https://issuer.example/oauth/authorize#fragment",
+    "https://user:pw@issuer.example/oauth/authorize",
+    "https://issuer.example/oauth\\authorize",
+    "https://issuer.example/oauth/authorize ",
+    "https://issuer.example/oauth/authorize\u0000",
+    "https://issuer.example:/oauth/authorize",
+    "https://issuer.example:65536/oauth/authorize",
+    "https://issuer.example/foo/../callback",
+  ];
+  for (const field of ["authorization_endpoint", "token_endpoint"]) {
+    for (const endpoint of rejected) {
+      const registration = publishedRegistration();
+      registration[field] = endpoint;
+      const result = redemptionOf({ registration });
+      assert.equal(result.code, "UNKNOWN_CLIENT", `${field} ${endpoint}`);
+      assert.equal(result.failure, "unverified", `${field} ${endpoint}`);
+      assert.equal(result.codeConsumed, false, `${field} ${endpoint}`);
+      assertNoSession(result);
+      const replayed = redemptionOf({ registration, record: { consumed: true } });
+      assert.equal(replayed.code, "UNKNOWN_CLIENT", `${field} ${endpoint}`);
+      assert.equal(replayed.codeConsumed, false, `${field} ${endpoint}`);
+    }
+  }
 });
