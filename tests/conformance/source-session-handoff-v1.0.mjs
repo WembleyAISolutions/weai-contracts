@@ -24,6 +24,7 @@ import {
   pkceChallengeFor,
   pkceVerifierValid,
   redemptionResponseMatchesContext,
+  registrationEndpointsAccepted,
   registrationPermitsRedirect,
   parseUtc,
   retryableFor,
@@ -1395,6 +1396,10 @@ test("source-session-handoff authorization callback and pkce shapes are closed",
     assert.equal(browserCallbackQueryAllowed({ ...success, subject_ref: "subject-placeholder-001" }, request.state), false);
     assert.equal(browserCallbackQueryAllowed({ error: "invalid_scope", state: success.state }, request.state), false);
     assert.equal(browserCallbackQueryAllowed({ error: "access_denied", state: success.state, error_description: "no" }, request.state), false);
+    assert.equal(browserCallbackQueryAllowed({ ...success, code: "" }, request.state), false);
+    assert.equal(browserCallbackQueryAllowed({ ...success, code: null }, request.state), false);
+    assert.equal(browserCallbackQueryAllowed({ ...success, code: { value: success.code } }, request.state), false);
+    assert.equal(browserCallbackQueryAllowed({ ...success, code: "short-code" }, request.state), false);
   });
   await t.test("authorization request destination is semantically validated", () => {
     assert.equal(authorizationRequestDestinationAccepted(request), true);
@@ -1958,6 +1963,49 @@ test("source-session-handoff context lifetime cannot use skew or outlive the sou
   assertNoSession(equalEnd);
 });
 
+test("source-session-handoff redemption schema validity must be affirmative", () => {
+  const request = publishedRedemptionRequest();
+  const input = {
+    request,
+    registration: publishedRegistration(),
+    codeRecord: codeRecordFor(request),
+    codeChallengeMethod: "S256",
+    now: "2026-08-15T00:00:30Z",
+    issuerUnavailable: false,
+    dependencyAvailable: true,
+  };
+  const omitted = assessRedemption(input);
+  assert.equal(omitted.code, "MALFORMED_REQUEST");
+  assert.equal(omitted.failure, "malformed");
+  assert.equal(omitted.codeConsumed, false);
+  assertNoSession(omitted);
+  const undefinedFlag = assessRedemption({ ...input, schemaValidRequest: undefined });
+  assert.equal(undefinedFlag.code, "MALFORMED_REQUEST");
+  assert.equal(undefinedFlag.codeConsumed, false);
+  const extra = { ...structuredClone(request), extension_field: "not-admitted" };
+  const unknown = assessRedemption({ ...input, request: extra });
+  assert.equal(unknown.code, "MALFORMED_REQUEST");
+  assert.equal(unknown.codeConsumed, false);
+  const missingGrant = structuredClone(request);
+  delete missingGrant.grant_type;
+  const droppedGrant = assessRedemption({ ...input, request: missingGrant });
+  assert.equal(droppedGrant.code, "MALFORMED_REQUEST");
+  assert.equal(droppedGrant.codeConsumed, false);
+  const missingCode = structuredClone(request);
+  delete missingCode.authorization_code;
+  const droppedCode = assessRedemption({ ...input, request: missingCode });
+  assert.equal(droppedCode.code, "MALFORMED_REQUEST");
+  assert.equal(droppedCode.codeConsumed, false);
+  const wrongFamily = structuredClone(request);
+  wrongFamily.contract_family = "other-family";
+  const family = assessRedemption({ ...input, request: wrongFamily });
+  assert.equal(family.code, "UNSUPPORTED_CONTRACT_VERSION");
+  assert.equal(family.codeConsumed, false);
+  const accepted = redemptionOf();
+  assert.equal(accepted.failure, null);
+  assert.equal(accepted.codeConsumed, true);
+});
+
 test("source-session-handoff schema validity must be affirmative", () => {
   const base = presentationOf();
   const omitted = { ...base };
@@ -1991,6 +2039,7 @@ test("source-session-handoff registration is public verification material only",
   const withPrivate = structuredClone(registration);
   withPrivate.jwks.keys[0].d = "not-a-public-parameter";
   assert.equal(validatorFor(REGISTRATION_SCHEMA)(withPrivate), false);
+  assert.equal(registrationEndpointsAccepted(registration), true);
   assert.equal(
     registrationPermitsRedirect(
       registration,
@@ -1999,6 +2048,28 @@ test("source-session-handoff registration is public verification material only",
     ),
     true,
   );
+  const validateRegistration = validatorFor(REGISTRATION_SCHEMA);
+  for (const field of ["authorization_endpoint", "token_endpoint"]) {
+    const malformed = structuredClone(registration);
+    malformed[field] = "https://[:::1]/callback";
+    assert.equal(validateRegistration(malformed), true, field);
+    assert.equal(destinationUriValid(malformed[field]), false, field);
+    assert.equal(registrationEndpointsAccepted(malformed), false, field);
+    assert.equal(
+      registrationPermitsRedirect(malformed, malformed.client_ref, malformed.destination_uris[0]),
+      false,
+      field,
+    );
+    assert.equal(
+      redemptionResponseMatchesContext(
+        loadJson(REDEMPTION_RESPONSE_EXAMPLE),
+        loadJson(CONTEXT_EXAMPLE),
+        malformed,
+      ),
+      false,
+      field,
+    );
+  }
   assert.equal(
     registrationPermitsRedirect(
       registration,
