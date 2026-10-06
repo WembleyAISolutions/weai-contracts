@@ -23,12 +23,14 @@ import {
   jwsHeaderAccepted,
   pkceChallengeFor,
   pkceVerifierValid,
+  prefixScanEvidence,
   redemptionResponseMatchesContext,
   registrationEndpointsAccepted,
   registrationPermitsRedirect,
   parseUtc,
   retryableFor,
   sameCompleteAuthenticatedContext,
+  scopeArrayInvalid,
 } from "./source-session-handoff/semantics.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -1335,6 +1337,7 @@ function codeRecordFor(request, overrides = {}) {
     transaction_ref: request.transaction_ref,
     correlation_ref: request.correlation_ref,
     purpose: request.purpose,
+    authorization_code: request.authorization_code,
     issued_at: "2026-08-15T00:00:00Z",
     expires_at: "2026-08-15T00:01:00Z",
     consumed: false,
@@ -2186,4 +2189,527 @@ test("source-session-handoff redemption requires canonical registration endpoint
       assert.equal(replayed.codeConsumed, false, `${field} ${endpoint}`);
     }
   }
+});
+
+function pairwisePrefixReference(values) {
+  const sorted = [...values].sort();
+  for (let i = 0; i < sorted.length; i += 1) {
+    for (let j = i + 1; j < sorted.length; j += 1) {
+      if (sorted[j].startsWith(sorted[i])) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function signedRawSegments(headerBytes, payloadBytes, privateKey) {
+  const encodedHeader = Buffer.from(headerBytes).toString("base64url");
+  const encodedPayload = Buffer.from(payloadBytes).toString("base64url");
+  const signingInput = Buffer.from(`${encodedHeader}.${encodedPayload}`);
+  const signature = sign(null, signingInput, privateKey);
+  return {
+    assertion: `${encodedHeader}.${encodedPayload}.${signature.toString("base64url")}`,
+    signingInput,
+    signature,
+  };
+}
+
+test("source-session-handoff code identity is bound before record state", () => {
+  const requestA = publishedRedemptionRequest();
+  const recordA = codeRecordFor(requestA);
+  const otherCode = "bbbbbbbbbbbbbbbbbbbbbb";
+  const matched = redemptionOf({ request: requestA, codeRecord: recordA });
+  assert.equal(matched.failure, null);
+  assert.equal(matched.codeConsumed, true);
+  assertNoSession(matched);
+
+  const requestB = structuredClone(requestA);
+  requestB.authorization_code = otherCode;
+  const unknown = redemptionOf({ request: requestB, codeRecord: recordA });
+  assert.equal(unknown.code, "CODE_UNKNOWN");
+  assert.equal(unknown.failure, "unverified");
+  assert.equal(unknown.retryable, false);
+  assert.equal(unknown.codeConsumed, false);
+  assertNoSession(unknown);
+
+  const missingIdentity = codeRecordFor(requestA);
+  delete missingIdentity.authorization_code;
+  assert.equal(redemptionOf({ codeRecord: missingIdentity }).code, "CODE_UNKNOWN");
+  const nullIdentity = codeRecordFor(requestA);
+  nullIdentity.authorization_code = null;
+  assert.equal(redemptionOf({ codeRecord: nullIdentity }).code, "CODE_UNKNOWN");
+  const numericIdentity = codeRecordFor(requestA);
+  numericIdentity.authorization_code = 1234567890123456789012;
+  assert.equal(redemptionOf({ codeRecord: numericIdentity }).code, "CODE_UNKNOWN");
+  const shortIdentity = codeRecordFor(requestA);
+  shortIdentity.authorization_code = "short-code";
+  assert.equal(redemptionOf({ codeRecord: shortIdentity }).code, "CODE_UNKNOWN");
+  const caseIdentity = codeRecordFor(requestA);
+  caseIdentity.authorization_code = `Q${requestA.authorization_code.slice(1)}`;
+  const caseResult = redemptionOf({ codeRecord: caseIdentity });
+  assert.equal(caseResult.code, "CODE_UNKNOWN");
+  assert.equal(caseResult.codeConsumed, false);
+  assert.equal(redemptionOf({ codeRecord: ["not-a-record"] }).code, "CODE_UNKNOWN");
+
+  const consumedMatch = codeRecordFor(requestA, { consumed: true });
+  const replay = redemptionOf({ codeRecord: consumedMatch });
+  assert.equal(replay.code, "CODE_REPLAYED");
+  assert.equal(replay.codeConsumed, false);
+  assertNoSession(replay);
+  const consumedOther = codeRecordFor(requestA, { consumed: true });
+  const hiddenReplay = redemptionOf({ request: requestB, codeRecord: consumedOther });
+  assert.equal(hiddenReplay.code, "CODE_UNKNOWN");
+  assert.equal(hiddenReplay.codeConsumed, false);
+
+  const malformedRequest = structuredClone(requestA);
+  malformedRequest.authorization_code = "short";
+  const malformed = redemptionOf({
+    request: malformedRequest,
+    codeRecord: recordA,
+    schemaValidRequest: true,
+  });
+  assert.equal(malformed.code, "MALFORMED_REQUEST");
+  assert.equal(malformed.codeConsumed, false);
+  assertNoSession(malformed);
+
+  const missingConsumed = codeRecordFor(requestA);
+  delete missingConsumed.consumed;
+  const missingFlag = redemptionOf({ codeRecord: missingConsumed });
+  assert.equal(missingFlag.code, "MALFORMED_REQUEST");
+  assert.equal(missingFlag.codeConsumed, false);
+  const stringConsumed = codeRecordFor(requestA, { consumed: "false" });
+  assert.equal(redemptionOf({ codeRecord: stringConsumed }).code, "MALFORMED_REQUEST");
+
+  const wrongClient = structuredClone(requestA);
+  wrongClient.client_ref = "client-placeholder-002";
+  assert.equal(redemptionOf({ request: wrongClient, codeRecord: recordA }).code, "UNKNOWN_CLIENT");
+  const otherDestination = "https://receiver.example/session-handoff/other";
+  const registration = publishedRegistration();
+  registration.destination_uris = [...registration.destination_uris, otherDestination];
+  const wrongDestination = structuredClone(requestA);
+  wrongDestination.destination_uri = otherDestination;
+  const destination = redemptionOf({
+    request: wrongDestination,
+    registration,
+    codeRecord: recordA,
+  });
+  assert.equal(destination.code, "DESTINATION_MISMATCH");
+  assert.equal(destination.codeConsumed, false);
+  const wrongVerifier = structuredClone(requestA);
+  wrongVerifier.code_verifier = "a".repeat(43);
+  const pkce = redemptionOf({ request: wrongVerifier, codeRecord: recordA });
+  assert.equal(pkce.code, "PKCE_MISMATCH");
+  assert.equal(pkce.codeConsumed, false);
+  for (const [field, value, code] of [
+    ["purpose", "other-purpose", "PURPOSE_MISMATCH"],
+    ["handoff_ref", "handoff-placeholder-002", "HANDOFF_MISMATCH"],
+    ["transaction_ref", "transaction-placeholder-002", "TRANSACTION_MISMATCH"],
+    ["correlation_ref", "correlation-placeholder-002", "CORRELATION_MISMATCH"],
+  ]) {
+    const request = structuredClone(requestA);
+    request[field] = value;
+    const result = redemptionOf({ request, codeRecord: recordA });
+    assert.equal(result.code, code, field);
+    assert.equal(result.codeConsumed, false, field);
+    assertNoSession(result);
+  }
+});
+
+test("source-session-handoff issuance window is half-open", () => {
+  const initiation = loadJson(INITIATION_EXAMPLE);
+  const baseContext = loadJson(CONTEXT_EXAMPLE);
+  const judge = (issuedAt, expiresAt, at, sourceSessionExpiresAt, extra = {}) => assessSourceSessionHandoff(presentationOf({
+    initiation,
+    context: { ...structuredClone(baseContext), issued_at: issuedAt, expires_at: expiresAt },
+    at,
+    sourceSessionExpiresAt,
+    ...extra,
+  }));
+
+  const exactStart = judge(
+    initiation.initiated_at,
+    "2026-08-15T00:04:00Z",
+    "2026-08-15T00:00:30Z",
+    "2026-08-15T00:04:00Z",
+  );
+  assert.equal(exactStart.failure, null);
+  assert.equal(exactStart.contextAccepted, true);
+
+  const deepBeforeEnd = "2026-08-15T00:00:44.999999999999999999999999999999Z";
+  const deepExpiry = "2026-08-15T00:04:44.999999999999999999999999999999Z";
+  const justBefore = judge(deepBeforeEnd, deepExpiry, deepBeforeEnd, deepExpiry);
+  assert.equal(justBefore.failure, null);
+  assert.equal(justBefore.contextAccepted, true);
+
+  const exactEnd = judge(
+    initiation.expires_at,
+    "2026-08-15T00:04:45Z",
+    initiation.expires_at,
+    "2026-08-15T00:04:45Z",
+  );
+  assert.equal(exactEnd.failure, "expired");
+  assert.equal(exactEnd.reconciled, false);
+  assertNoSession(exactEnd);
+
+  const afterEnd = judge(
+    "2026-08-15T00:00:45.0000000001Z",
+    "2026-08-15T00:04:45.0000000001Z",
+    "2026-08-15T00:00:45.0000000001Z",
+    "2026-08-15T00:04:45.0000000001Z",
+  );
+  assert.equal(afterEnd.failure, "expired");
+
+  const zeroWindow = structuredClone(initiation);
+  zeroWindow.expires_at = zeroWindow.initiated_at;
+  const zero = assessSourceSessionHandoff(presentationOf({
+    initiation: zeroWindow,
+    sourceSessionExpiresAt: baseContext.expires_at,
+  }));
+  assert.equal(zero.failure, "expired");
+  const inverted = structuredClone(initiation);
+  inverted.expires_at = "2026-08-15T00:00:00Z";
+  inverted.initiated_at = "2026-08-15T00:00:45Z";
+  assert.equal(assessSourceSessionHandoff(presentationOf({ initiation: inverted })).failure, "expired");
+
+  const legalCode = structuredClone(initiation);
+  legalCode.expires_at = "2026-08-15T00:01:00Z";
+  const legalContext = structuredClone(baseContext);
+  legalContext.issued_at = "2026-08-15T00:00:30Z";
+  legalContext.expires_at = "2026-08-15T00:05:30Z";
+  const legal = assessSourceSessionHandoff(presentationOf({
+    initiation: legalCode,
+    context: legalContext,
+    at: legalContext.issued_at,
+    sourceSessionExpiresAt: legalContext.expires_at,
+  }));
+  assert.equal(legal.failure, null);
+  assert.equal(durationWithin(legalCode.initiated_at, legalCode.expires_at, 60n), true);
+  assert.equal(durationWithin(legalContext.issued_at, legalContext.expires_at, 300n), true);
+
+  const afterCode = assessSourceSessionHandoff(presentationOf({
+    at: "2026-08-15T00:01:00Z",
+    sourceSessionExpiresAt: baseContext.expires_at,
+  }));
+  assert.equal(afterCode.failure, null);
+  assert.equal(afterCode.contextAccepted, true);
+
+  const atContextEnd = assessSourceSessionHandoff(presentationOf({
+    at: baseContext.expires_at,
+    sourceSessionExpiresAt: baseContext.expires_at,
+  }));
+  assert.equal(atContextEnd.failure, "expired");
+  const missingSession = assessSourceSessionHandoff(presentationOf({ sourceSessionExpiresAt: undefined }));
+  assert.equal(missingSession.failure, "unverified");
+  const exceedsSession = assessSourceSessionHandoff(presentationOf({
+    sourceSessionExpiresAt: "2026-08-15T00:04:00Z",
+  }));
+  assert.equal(exceedsSession.failure, "expired");
+
+  const reconciledEnd = judge(
+    initiation.expires_at,
+    "2026-08-15T00:04:45Z",
+    initiation.expires_at,
+    "2026-08-15T00:04:45Z",
+    {
+      uncertain: true,
+      codeConsumed: true,
+      redeemedContext: {
+        ...structuredClone(baseContext),
+        issued_at: initiation.expires_at,
+        expires_at: "2026-08-15T00:04:45Z",
+      },
+    },
+  );
+  assert.equal(reconciledEnd.failure, "expired");
+  assert.equal(reconciledEnd.reconciled, false);
+  assertNoSession(reconciledEnd);
+
+  const lowInitiation = structuredClone(initiation);
+  lowInitiation.initiated_at = "0099-12-31T23:59:30Z";
+  lowInitiation.expires_at = "0100-01-01T00:00:00Z";
+  const lowContext = structuredClone(baseContext);
+  lowContext.issued_at = "0099-12-31T23:59:59Z";
+  lowContext.expires_at = "0100-01-01T00:04:59Z";
+  const lowOk = assessSourceSessionHandoff(presentationOf({
+    initiation: lowInitiation,
+    context: lowContext,
+    at: lowContext.issued_at,
+    sourceSessionExpiresAt: lowContext.expires_at,
+  }));
+  assert.equal(lowOk.failure, null);
+  const lowEnd = structuredClone(lowContext);
+  lowEnd.issued_at = "0100-01-01T00:00:00Z";
+  lowEnd.expires_at = "0100-01-01T00:05:00Z";
+  const lowExpired = assessSourceSessionHandoff(presentationOf({
+    initiation: lowInitiation,
+    context: lowEnd,
+    at: lowEnd.issued_at,
+    sourceSessionExpiresAt: lowEnd.expires_at,
+  }));
+  assert.equal(lowExpired.failure, "expired");
+});
+
+test("source-session-handoff prefix checks compare adjacent sorted bounds", () => {
+  const cases = [
+    ["aa", "zz", "bb"],
+    ["scope-001", "scope-001-extra", "scope-002"],
+    ["m-prefix", "a-prefix", "z-prefix"],
+    ["aa", "aa"],
+    ["abc", "abd"],
+    ["scope-prefix-001", "scope-prefix-002"],
+    ["aa", "aaa"],
+    ["\uD83D\uDE00", "\uD83D\uDE00b", "b"],
+  ];
+  for (const values of cases) {
+    const evidence = prefixScanEvidence(values);
+    assert.equal(evidence.ambiguous, pairwisePrefixReference(values), values.join(","));
+    assert.ok(evidence.comparisons <= Math.max(values.length - 1, 0));
+  }
+  assert.equal(prefixScanEvidence(["aa", "zz", "aaa"]).ambiguous, true);
+  assert.equal(scopeArrayInvalid(["scope-002", "scope-001"]), true);
+  assert.equal(scopeArrayInvalid(["scope-001", "scope-002"]), false);
+  const frozen = Object.freeze(["b", "a"]);
+  const snapshot = [...frozen];
+  assert.equal(scopeArrayInvalid(frozen), true);
+  assert.deepEqual([...frozen], snapshot);
+  const many = Array.from({ length: 10000 }, (_item, index) => `v${String(index).padStart(5, "0")}`);
+  const scan = prefixScanEvidence(many);
+  assert.equal(scan.ambiguous, false);
+  assert.equal(scan.comparisons, many.length - 1);
+  assert.equal(many[0], "v00000");
+  assert.equal(many[9999], "v09999");
+});
+
+test("source-session-handoff JWS decoding rejects invalid UTF-8", () => {
+  const ed = generateKeyPairSync("ed25519");
+  const kid = "source-key-placeholder-001";
+  const registration = registrationWithKeys([publicJwk(ed.publicKey, kid, "EdDSA")], ["EdDSA"]);
+  const context = loadJson(CONTEXT_EXAMPLE);
+  const header = { alg: "EdDSA", kid };
+  const headerBytes = Buffer.from(JSON.stringify(header));
+  const response = loadJson(REDEMPTION_RESPONSE_EXAMPLE);
+  const multibyte = structuredClone(context);
+  multibyte.subject_ref = `${context.subject_ref}-caf\u00e9`;
+  const multibyteSigned = signedAssertion(header, multibyte, ed.privateKey);
+  assert.equal(inspectCompactJws(multibyteSigned).payload.subject_ref, multibyte.subject_ref);
+  assert.equal(
+    redemptionResponseMatchesContext(
+      { ...structuredClone(response), assertion: multibyteSigned },
+      multibyte,
+      registration,
+    ),
+    true,
+  );
+
+  const marker = Buffer.from('"subject_ref":"');
+  const json = Buffer.from(JSON.stringify(context));
+  const at = json.indexOf(marker);
+  assert.ok(at > 0);
+  const replacements = {
+    "invalid payload": Buffer.from([0xff]),
+    "continuation byte": Buffer.from([0x80]),
+    "truncated sequence": Buffer.from([0xc3]),
+    "overlong sequence": Buffer.from([0xc0, 0x80]),
+  };
+  for (const [name, bytes] of Object.entries(replacements)) {
+    const payloadBytes = Buffer.concat([
+      json.subarray(0, at + marker.length),
+      bytes,
+      json.subarray(at + marker.length),
+    ]);
+    const signed = signedRawSegments(headerBytes, payloadBytes, ed.privateKey);
+    assert.equal(verify(null, signed.signingInput, ed.publicKey, signed.signature), true, name);
+    const laundered = structuredClone(context);
+    laundered.subject_ref = `\uFFFD${context.subject_ref}`;
+    assert.equal(inspectCompactJws(signed.assertion), null, name);
+    assert.equal(
+      redemptionResponseMatchesContext(
+        { ...structuredClone(response), assertion: signed.assertion },
+        laundered,
+        registration,
+      ),
+      false,
+      name,
+    );
+  }
+
+  const literalReplacement = structuredClone(context);
+  literalReplacement.subject_ref = `\uFFFD${context.subject_ref}`;
+  const literalSigned = signedAssertion(header, literalReplacement, ed.privateKey);
+  assert.equal(inspectCompactJws(literalSigned).payload.subject_ref, literalReplacement.subject_ref);
+  assert.equal(
+    redemptionResponseMatchesContext(
+      { ...structuredClone(response), assertion: literalSigned },
+      literalReplacement,
+      registration,
+    ),
+    true,
+  );
+
+  const bom = signedRawSegments(
+    headerBytes,
+    Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(JSON.stringify(context))]),
+    ed.privateKey,
+  );
+  assert.equal(verify(null, bom.signingInput, ed.publicKey, bom.signature), true);
+  assert.equal(inspectCompactJws(bom.assertion), null);
+  assert.equal(
+    redemptionResponseMatchesContext(
+      { ...structuredClone(response), assertion: bom.assertion },
+      context,
+      registration,
+    ),
+    false,
+  );
+  const headerBom = signedRawSegments(
+    Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), headerBytes]),
+    Buffer.from(JSON.stringify(context)),
+    ed.privateKey,
+  );
+  assert.equal(inspectCompactJws(headerBom.assertion), null);
+
+  const badHeader = signedRawSegments(Buffer.from([0xff, 0x7b, 0x7d]), Buffer.from(JSON.stringify(context)), ed.privateKey);
+  assert.equal(inspectCompactJws(badHeader.assertion), null);
+  for (const payload of ["{", "null", "[]"]) {
+    const parsed = signedRawSegments(headerBytes, Buffer.from(payload), ed.privateKey);
+    assert.equal(inspectCompactJws(parsed.assertion), null, payload);
+  }
+  assert.equal(inspectCompactJws(multibyteSigned.split(".").slice(0, 2).join(".")), null);
+  const tampered = corruptSignature(multibyteSigned);
+  assert.equal(
+    redemptionResponseMatchesContext(
+      { ...structuredClone(response), assertion: tampered },
+      multibyte,
+      registration,
+    ),
+    false,
+  );
+  const unknown = signedAssertion({ alg: "EdDSA", kid: "unknown-key" }, context, ed.privateKey);
+  assert.equal(
+    redemptionResponseMatchesContext(
+      { ...structuredClone(response), assertion: unknown },
+      context,
+      registration,
+    ),
+    false,
+  );
+});
+
+test("source-session-handoff rejects hexadecimal integer DNS labels on every URI path", () => {
+  const rejected = [
+    "https://0xdead.example/callback",
+    "https://api.0xdead.example/callback",
+    "https://0XDEAD.example/callback",
+    "https://%30xdead.example/callback",
+    "https://0x7f.0.0.1/callback",
+    "https://2130706433/callback",
+    "https://127.1/callback",
+    "https://0177.0.0.1/callback",
+  ];
+  const accepted = [
+    "https://3com/callback",
+    "https://service.3com/callback",
+    "https://3receiver.example/callback",
+    "https://0xdeadbeefish.example/callback",
+    "https://receiver.example/a//callback",
+    "https://192.0.2.10/callback",
+    "https://[2001:db8::192.0.2.1]/callback",
+  ];
+  const validateInitiation = validatorFor(INITIATION_SCHEMA);
+  const validateContext = validatorFor(CONTEXT_SCHEMA);
+  const validateRequest = validatorFor(AUTHZ_REQUEST_SCHEMA);
+  const validateRegistration = validatorFor(REGISTRATION_SCHEMA);
+  for (const uri of rejected) {
+    assert.equal(destinationUriValid(uri), false, uri);
+    const initiation = loadJson(INITIATION_EXAMPLE);
+    initiation.destination_uri = uri;
+    assert.equal(validateInitiation(initiation), false, uri);
+    assert.equal(initiationSemanticsHold(initiation), false, uri);
+    const context = loadJson(CONTEXT_EXAMPLE);
+    context.destination_uri = uri;
+    assert.equal(validateContext(context), false, uri);
+    assert.equal(contextSemanticsHold(context), false, uri);
+    const request = loadJson(AUTHZ_REQUEST_EXAMPLE);
+    request.destination_uri = uri;
+    assert.equal(validateRequest(request), false, uri);
+    assert.equal(authorizationRequestDestinationAccepted(request), false, uri);
+    const registration = publishedRegistration();
+    registration.authorization_endpoint = uri;
+    registration.token_endpoint = uri;
+    assert.equal(validateRegistration(registration), false, uri);
+    assert.equal(registrationEndpointsAccepted(registration), false, uri);
+    assert.equal(registrationPermitsRedirect(registration, registration.client_ref, uri), false, uri);
+    const redemption = redemptionOf({
+      request: { ...publishedRedemptionRequest(), destination_uri: uri },
+      schemaValidRequest: true,
+    });
+    assert.equal(redemption.code, "MALFORMED_REQUEST", uri);
+    assert.equal(redemption.codeConsumed, false, uri);
+    assertNoSession(redemption);
+  }
+  for (const uri of accepted) {
+    assert.equal(destinationUriValid(uri), true, uri);
+    const initiation = loadJson(INITIATION_EXAMPLE);
+    initiation.destination_uri = uri;
+    assert.equal(validateInitiation(initiation), true, uri);
+    assert.equal(initiationSemanticsHold(initiation), true, uri);
+    const context = loadJson(CONTEXT_EXAMPLE);
+    context.destination_uri = uri;
+    assert.equal(validateContext(context), true, uri);
+    assert.equal(contextSemanticsHold(context), true, uri);
+    const request = loadJson(AUTHZ_REQUEST_EXAMPLE);
+    request.destination_uri = uri;
+    assert.equal(validateRequest(request), true, uri);
+    assert.equal(authorizationRequestDestinationAccepted(request), true, uri);
+  }
+  const forbidden = "https://0xdead.example/callback";
+  const allowListed = publishedRegistration();
+  allowListed.destination_uris = [forbidden];
+  assert.equal(
+    registrationPermitsRedirect(allowListed, allowListed.client_ref, forbidden),
+    false,
+  );
+  const mismatch = redemptionOf({ registration: allowListed });
+  assert.equal(mismatch.code, "DESTINATION_MISMATCH");
+  assert.equal(mismatch.codeConsumed, false);
+  const badEndpoint = publishedRegistration();
+  badEndpoint.authorization_endpoint = "https://api.0xdead.example/callback";
+  const endpoint = redemptionOf({ registration: badEndpoint });
+  assert.equal(endpoint.code, "UNKNOWN_CLIENT");
+  assert.equal(endpoint.codeConsumed, false);
+});
+
+test("source-session-handoff oracle integration keeps one failing invariant closed", () => {
+  const request = publishedRedemptionRequest();
+  const record = codeRecordFor(request);
+  const registration = publishedRegistration();
+  const context = loadJson(CONTEXT_EXAMPLE);
+  const initiation = loadJson(INITIATION_EXAMPLE);
+  const callback = loadJson(AUTHZ_SUCCESS_EXAMPLE);
+  const authz = loadJson(AUTHZ_REQUEST_EXAMPLE);
+  assert.equal(authorizationRequestDestinationAccepted(authz), true);
+  assert.equal(browserCallbackQueryAllowed(callback, authz.state), true);
+  const redeemed = redemptionOf({ request, codeRecord: record, registration });
+  assert.equal(redeemed.codeConsumed, true);
+  assert.equal(redemptionResponseMatchesContext(
+    loadJson(REDEMPTION_RESPONSE_EXAMPLE),
+    context,
+    registration,
+  ), true);
+  const accepted = assessSourceSessionHandoff(presentationOf({
+    initiation,
+    context,
+    sourceSessionExpiresAt: context.expires_at,
+  }));
+  assert.equal(accepted.contextAccepted, true);
+  assert.equal(accepted.mintsReceiverSession, false);
+
+  const otherCode = structuredClone(request);
+  otherCode.authorization_code = "cccccccccccccccccccccc";
+  const wrongCode = redemptionOf({ request: otherCode, codeRecord: record, registration });
+  assert.equal(wrongCode.code, "CODE_UNKNOWN");
+  assert.equal(wrongCode.codeConsumed, false);
+  assert.equal(wrongCode.contextAccepted, false);
+  assertNoSession(wrongCode);
 });
