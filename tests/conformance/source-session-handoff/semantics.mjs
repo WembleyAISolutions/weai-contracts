@@ -280,6 +280,9 @@ function profileHostnameExcluded(host) {
   if (host.startsWith("[")) {
     return false;
   }
+  if (host.endsWith(".")) {
+    return true;
+  }
   if (host.includes("%")) {
     return true;
   }
@@ -768,8 +771,18 @@ export function registrationPermitsRedirect(registration, clientRef, destination
   return registration.destination_uris.some((item) => item === destination);
 }
 
-function jsonValueFromBase64Url(segment) {
-  const bytes = Buffer.from(segment, "base64url");
+function canonicalBase64UrlBytes(segment) {
+  if (typeof segment !== "string" || !/^[A-Za-z0-9_-]+$/.test(segment)) {
+    return null;
+  }
+  const decoded = Buffer.from(segment, "base64url");
+  if (decoded.toString("base64url") !== segment) {
+    return null;
+  }
+  return decoded;
+}
+
+function jsonFromCanonicalBytes(bytes) {
   const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
   if (text.length > 0 && text.charCodeAt(0) === 0xfeff) {
     throw new Error("leading UTF-8 BOM");
@@ -786,12 +799,18 @@ export function inspectCompactJws(assertion) {
     return null;
   }
   const parts = assertion.split(".");
-  if (parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part))) {
+  if (parts.length !== 3) {
+    return null;
+  }
+  const headerBytes = canonicalBase64UrlBytes(parts[0]);
+  const payloadBytes = canonicalBase64UrlBytes(parts[1]);
+  const signature = canonicalBase64UrlBytes(parts[2]);
+  if (headerBytes === null || payloadBytes === null || signature === null) {
     return null;
   }
   try {
-    const header = jsonValueFromBase64Url(parts[0]);
-    const payload = jsonValueFromBase64Url(parts[1]);
+    const header = jsonFromCanonicalBytes(headerBytes);
+    const payload = jsonFromCanonicalBytes(payloadBytes);
     if (header === null || typeof header !== "object" || Array.isArray(header)) {
       return null;
     }
@@ -802,7 +821,7 @@ export function inspectCompactJws(assertion) {
       header,
       payload,
       signingInput: Buffer.from(`${parts[0]}.${parts[1]}`),
-      signature: Buffer.from(parts[2], "base64url"),
+      signature,
     };
   } catch {
     return null;
