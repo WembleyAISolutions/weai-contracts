@@ -2713,3 +2713,151 @@ test("source-session-handoff oracle integration keeps one failing invariant clos
   assert.equal(wrongCode.contextAccepted, false);
   assertNoSession(wrongCode);
 });
+
+function unusedBitAlias(segment) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const decoded = Buffer.from(segment, "base64url");
+  const last = segment[segment.length - 1];
+  for (const character of alphabet) {
+    if (character === last) {
+      continue;
+    }
+    const candidate = `${segment.slice(0, -1)}${character}`;
+    if (Buffer.from(candidate, "base64url").equals(decoded)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+test("source-session-handoff compact JWS segments must be canonical base64url", () => {
+  const response = loadJson(REDEMPTION_RESPONSE_EXAMPLE);
+  const context = loadJson(CONTEXT_EXAMPLE);
+  const registration = publishedRegistration();
+  const [header, payload, signature] = response.assertion.split(".");
+  assert.equal(inspectCompactJws(response.assertion) !== null, true);
+  assert.equal(redemptionResponseMatchesContext(response, context, registration), true);
+  assert.equal(Buffer.from(signature, "base64url").toString("base64url"), signature);
+
+  const signatureAlias = `${signature.slice(0, -1)}x`;
+  assert.equal(signature.endsWith("w"), true);
+  assert.notEqual(signatureAlias, signature);
+  assert.equal(
+    Buffer.from(signatureAlias, "base64url").equals(Buffer.from(signature, "base64url")),
+    true,
+  );
+  const aliased = `${header}.${payload}.${signatureAlias}`;
+  const key = createPublicKey({ key: registration.jwks.keys[0], format: "jwk" });
+  assert.equal(
+    verify(null, Buffer.from(`${header}.${payload}`), key, Buffer.from(signatureAlias, "base64url")),
+    true,
+  );
+  assert.equal(inspectCompactJws(aliased), null);
+  assert.equal(
+    redemptionResponseMatchesContext({ ...structuredClone(response), assertion: aliased }, context, registration),
+    false,
+  );
+
+  const ed = generateKeyPairSync("ed25519");
+  const kid = "source-key-placeholder-001";
+  const edRegistration = registrationWithKeys([publicJwk(ed.publicKey, kid, "EdDSA")], ["EdDSA"]);
+  const headerObject = { alg: "EdDSA", kid };
+  const headerSegment = Buffer.from(JSON.stringify(headerObject)).toString("base64url");
+  const payloadSegment = Buffer.from(JSON.stringify(context)).toString("base64url");
+  const headerAlias = unusedBitAlias(headerSegment);
+  const payloadAlias = unusedBitAlias(payloadSegment);
+  assert.notEqual(headerAlias, null);
+  assert.notEqual(payloadAlias, null);
+  for (const [name, encodedHeader, encodedPayload] of [
+    ["header alias", headerAlias, payloadSegment],
+    ["payload alias", headerSegment, payloadAlias],
+  ]) {
+    const signingInput = Buffer.from(`${encodedHeader}.${encodedPayload}`);
+    const signed = sign(null, signingInput, ed.privateKey);
+    const assertion = `${encodedHeader}.${encodedPayload}.${signed.toString("base64url")}`;
+    assert.equal(verify(null, signingInput, ed.publicKey, signed), true, name);
+    assert.equal(inspectCompactJws(assertion), null, name);
+    assert.equal(
+      redemptionResponseMatchesContext(
+        { ...structuredClone(response), assertion },
+        context,
+        edRegistration,
+      ),
+      false,
+      name,
+    );
+  }
+
+  const canonical = signedAssertion(headerObject, context, ed.privateKey);
+  assert.equal(
+    redemptionResponseMatchesContext(
+      { ...structuredClone(response), assertion: canonical },
+      context,
+      edRegistration,
+    ),
+    true,
+  );
+  const ec = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  for (const [alg, pair, curveKid] of [
+    ["ES256", ec, "ec-key-001"],
+    ["RS256", rsa, "rsa-key-001"],
+  ]) {
+    const jwk = publicJwk(pair.publicKey, curveKid, alg);
+    const accepted = signedAssertion({ alg, kid: curveKid }, context, pair.privateKey);
+    assert.equal(
+      redemptionResponseMatchesContext(
+        { ...structuredClone(response), assertion: accepted },
+        context,
+        registrationWithKeys([jwk], [alg]),
+      ),
+      true,
+      alg,
+    );
+  }
+
+  assert.equal(inspectCompactJws(`${header}.${payload}`), null);
+  assert.equal(inspectCompactJws(`${header}..${signature}`), null);
+  assert.equal(inspectCompactJws(`${header}.${payload}.${signature}.`), null);
+  assert.equal(inspectCompactJws(`${header}.${payload}.${signature}=`), null);
+  assert.equal(inspectCompactJws(`${header}.${payload}.${signature} `), null);
+  assert.equal(inspectCompactJws(`${header}.${payload}.+${signature.slice(1)}`), null);
+  assert.equal(inspectCompactJws(canonical.split(".").slice(0, 2).join(".")), null);
+});
+
+test("source-session-handoff rejects a trailing DNS root dot", () => {
+  const uri = "https://receiver.example./callback";
+  assert.equal(destinationUriValid(uri), false);
+  const initiation = loadJson(INITIATION_EXAMPLE);
+  initiation.destination_uri = uri;
+  assert.equal(validatorFor(INITIATION_SCHEMA)(initiation), false);
+  assert.equal(initiationSemanticsHold(initiation), false);
+  const context = loadJson(CONTEXT_EXAMPLE);
+  context.destination_uri = uri;
+  assert.equal(validatorFor(CONTEXT_SCHEMA)(context), false);
+  assert.equal(contextSemanticsHold(context), false);
+  const request = loadJson(AUTHZ_REQUEST_EXAMPLE);
+  request.destination_uri = uri;
+  assert.equal(validatorFor(AUTHZ_REQUEST_SCHEMA)(request), false);
+  assert.equal(authorizationRequestDestinationAccepted(request), false);
+  const registration = publishedRegistration();
+  registration.authorization_endpoint = uri;
+  registration.token_endpoint = uri;
+  assert.equal(validatorFor(REGISTRATION_SCHEMA)(registration), false);
+  assert.equal(registrationEndpointsAccepted(registration), false);
+  assert.equal(registrationPermitsRedirect(registration, registration.client_ref, uri), false);
+  const redeemed = redemptionOf({
+    request: { ...publishedRedemptionRequest(), destination_uri: uri },
+    schemaValidRequest: true,
+  });
+  assert.equal(redeemed.code, "MALFORMED_REQUEST");
+  assert.equal(redeemed.codeConsumed, false);
+  assertNoSession(redeemed);
+  const allowListed = publishedRegistration();
+  allowListed.destination_uris = [uri];
+  const mismatch = redemptionOf({ registration: allowListed });
+  assert.equal(mismatch.code, "DESTINATION_MISMATCH");
+  assert.equal(mismatch.codeConsumed, false);
+  assert.equal(destinationUriValid("https://receiver.example/callback"), true);
+  assert.equal(destinationUriValid("https://[::1]/callback"), true);
+});
