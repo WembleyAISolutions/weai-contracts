@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/authorization-request.schema.json",
+  "title": "Source Session Handoff — authorization request (v1.0)",
+  "description": "Closed authorization request for profile oauth2-authorization-code-pkce-s256-v1. Browser redirect query names are these field names. The initiation object is not copied into this request. Subject, organisation, account, source session, source context, source role, source permission, record scope, receiver role, membership, grant, PKCE verifier, and token or assertion fields are forbidden.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "contract_family",
+    "contract_version",
+    "profile",
+    "response_type",
+    "client_ref",
+    "receiver_ref",
+    "destination_uri",
+    "state",
+    "code_challenge",
+    "code_challenge_method",
+    "handoff_ref",
+    "transaction_ref",
+    "correlation_ref",
+    "purpose"
+  ],
+  "properties": {
+    "contract_family": {
+      "const": "source-session-handoff"
+    },
+    "contract_version": {
+      "const": "v1.0"
+    },
+    "profile": {
+      "const": "oauth2-authorization-code-pkce-s256-v1"
+    },
+    "response_type": {
+      "const": "code"
+    },
+    "client_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Registered client. Presence does not prove receiver identity or authority."
+    },
+    "receiver_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Intended receiving party. Presence does not create a receiver role, membership, or grant."
+    },
+    "destination_uri": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/destinationUri",
+      "description": "Exact registered redirect destination. This profile does not rename the field."
+    },
+    "state": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/browserState",
+      "description": "Independent high-entropy browser correlation. Bound server-side to transaction_ref. Not required to equal transaction_ref."
+    },
+    "code_challenge": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/pkceS256Challenge"
+    },
+    "code_challenge_method": {
+      "const": "S256"
+    },
+    "handoff_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef"
+    },
+    "transaction_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Server-side transaction correlation. state is bound to it and is a different value."
+    },
+    "correlation_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef"
+    },
+    "purpose": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef"
+    }
+  }
+}

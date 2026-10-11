@@ -1,0 +1,335 @@
+{
+  "contract_family": "source-session-handoff",
+  "contract_version": "v1.0",
+  "profile": "oauth2-authorization-code-pkce-s256-v1",
+  "description": "Closed failure and machine-code matrix for source-session-handoff v1.0. automatic-machine retryable is true only for ISSUER_UNAVAILABLE and DEPENDENCY_UNAVAILABLE. SOURCE_AUTHENTICATION_REQUIRED needs user action and is not automatic-machine retryable. If the client or destination is not trusted, do not redirect the browser to the supplied destination. When a safe registered redirect is already established, browser denial may use only a safe OAuth error and state.",
+  "outcomes": [
+    {
+      "outcome": "malformed",
+      "retryable": false,
+      "meaning": "The peer object failed structural validation, or a scope element was structurally illegal. Retrying the same bytes cannot succeed."
+    },
+    {
+      "outcome": "unverified",
+      "retryable": false,
+      "meaning": "Issuer, audience, receiver, client, destination, purpose, or another exact binding did not match, or the source attestation was revoked. Hash equality is not a substitute."
+    },
+    {
+      "outcome": "expired",
+      "retryable": false,
+      "meaning": "The code window or context lifetime was inverted, non-positive, longer than the profile maximum, elapsed, or past the source session. A new handoff is required."
+    },
+    {
+      "outcome": "replayed",
+      "retryable": false,
+      "meaning": "The authorization code or handoff was already consumed. Reconciliation must not create a second receiver session."
+    },
+    {
+      "outcome": "identity_not_bound",
+      "retryable": false,
+      "meaning": "Subject, organisation, account, role context, session, or context was missing, browser-authored, forged, or not bound to the issuer attestation. Source authentication required is user action and is not automatic-machine retryable."
+    },
+    {
+      "outcome": "scope_invalid",
+      "retryable": false,
+      "meaning": "Record scope was an empty set, duplicated, wildcarded, unsorted, prefix-ambiguous, or not an explicit subset of the initiation request."
+    },
+    {
+      "outcome": "permission_denied",
+      "retryable": false,
+      "meaning": "Source role and permission bounds were treated as receiver access, or the source account is disabled. This contract does not grant that access."
+    },
+    {
+      "outcome": "unsupported_version",
+      "retryable": false,
+      "meaning": "The contract family, contract version, or profile is not the published v1.0 pair. Fail closed."
+    },
+    {
+      "outcome": "dependency_unavailable",
+      "retryable": true,
+      "meaning": "The issuer or another required dependency could not be reached. Retry may reconcile the same attempt only. It must not become success, an empty context, an unscoped redirect, or a second receiver session."
+    }
+  ],
+  "codes": [
+    {
+      "code": "SOURCE_AUTHENTICATION_REQUIRED",
+      "outcome": "identity_not_bound",
+      "retryable": false,
+      "safe_browser_behavior": "user_action_required",
+      "phase": [
+        "authorization"
+      ]
+    },
+    {
+      "code": "UNKNOWN_CLIENT",
+      "outcome": "unverified",
+      "retryable": false,
+      "safe_browser_behavior": "do_not_redirect",
+      "phase": [
+        "authorization",
+        "redemption"
+      ]
+    },
+    {
+      "code": "CLIENT_DISABLED",
+      "outcome": "unverified",
+      "retryable": false,
+      "safe_browser_behavior": "do_not_redirect",
+      "phase": [
+        "authorization",
+        "redemption"
+      ]
+    },
+    {
+      "code": "CLIENT_REVOKED",
+      "outcome": "unverified",
+      "retryable": false,
+      "safe_browser_behavior": "do_not_redirect",
+      "phase": [
+        "authorization",
+        "redemption"
+      ]
+    },
+    {
+      "code": "DESTINATION_MISMATCH",
+      "outcome": "unverified",
+      "retryable": false,
+      "safe_browser_behavior": "do_not_redirect",
+      "phase": [
+        "authorization",
+        "redemption"
+      ]
+    },
+    {
+      "code": "UNSUPPORTED_PROFILE",
+      "outcome": "unsupported_version",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "initiation",
+        "authorization",
+        "redemption",
+        "context"
+      ]
+    },
+    {
+      "code": "UNSUPPORTED_CONTRACT_VERSION",
+      "outcome": "unsupported_version",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "initiation",
+        "authorization",
+        "redemption",
+        "context"
+      ]
+    },
+    {
+      "code": "INVALID_PKCE_METHOD",
+      "outcome": "malformed",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "authorization",
+        "redemption"
+      ]
+    },
+    {
+      "code": "PKCE_MISMATCH",
+      "outcome": "unverified",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "redemption"
+      ]
+    },
+    {
+      "code": "CODE_EXPIRED",
+      "outcome": "expired",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "redemption"
+      ]
+    },
+    {
+      "code": "CODE_REPLAYED",
+      "outcome": "replayed",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "redemption"
+      ]
+    },
+    {
+      "code": "CODE_UNKNOWN",
+      "outcome": "unverified",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "redemption"
+      ]
+    },
+    {
+      "code": "SOURCE_ACCOUNT_DISABLED",
+      "outcome": "permission_denied",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "authorization",
+        "redemption"
+      ]
+    },
+    {
+      "code": "ORGANISATION_MISMATCH",
+      "outcome": "unverified",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "redemption",
+        "context"
+      ]
+    },
+    {
+      "code": "RECORD_SCOPE_INVALID",
+      "outcome": "scope_invalid",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "initiation",
+        "redemption",
+        "context"
+      ]
+    },
+    {
+      "code": "SOURCE_ROLE_CONTEXT_INVALID",
+      "outcome": "identity_not_bound",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "redemption",
+        "context"
+      ]
+    },
+    {
+      "code": "MALFORMED_REQUEST",
+      "outcome": "malformed",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "initiation",
+        "authorization",
+        "redemption"
+      ]
+    },
+    {
+      "code": "MALFORMED_REDEMPTION_RESPONSE",
+      "outcome": "malformed",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "redemption"
+      ]
+    },
+    {
+      "code": "MALFORMED_AUTHENTICATED_CONTEXT",
+      "outcome": "malformed",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "context"
+      ]
+    },
+    {
+      "code": "ISSUER_MISMATCH",
+      "outcome": "unverified",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "redemption",
+        "context"
+      ]
+    },
+    {
+      "code": "AUDIENCE_MISMATCH",
+      "outcome": "unverified",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "context"
+      ]
+    },
+    {
+      "code": "CONTEXT_EXPIRED",
+      "outcome": "expired",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "context"
+      ]
+    },
+    {
+      "code": "ISSUER_UNAVAILABLE",
+      "outcome": "dependency_unavailable",
+      "retryable": true,
+      "safe_browser_behavior": "retry_same_attempt_no_unscoped_redirect",
+      "phase": [
+        "authorization",
+        "redemption"
+      ]
+    },
+    {
+      "code": "DEPENDENCY_UNAVAILABLE",
+      "outcome": "dependency_unavailable",
+      "retryable": true,
+      "safe_browser_behavior": "retry_same_attempt_no_unscoped_redirect",
+      "phase": [
+        "initiation",
+        "authorization",
+        "redemption",
+        "context"
+      ]
+    },
+    {
+      "code": "PURPOSE_MISMATCH",
+      "outcome": "unverified",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "authorization",
+        "redemption",
+        "context"
+      ]
+    },
+    {
+      "code": "HANDOFF_MISMATCH",
+      "outcome": "unverified",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "redemption",
+        "context"
+      ]
+    },
+    {
+      "code": "TRANSACTION_MISMATCH",
+      "outcome": "unverified",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "redemption",
+        "context"
+      ]
+    },
+    {
+      "code": "CORRELATION_MISMATCH",
+      "outcome": "unverified",
+      "retryable": false,
+      "safe_browser_behavior": "safe_oauth_error_and_state",
+      "phase": [
+        "redemption",
+        "context"
+      ]
+    }
+  ]
+}

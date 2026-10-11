@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/authenticated-context.schema.json",
+  "title": "Source Session Handoff — authenticated context wire (v1.0)",
+  "description": "Issuer-attested authenticated context carried as the payload of one compact JWS. A valid context does not authenticate receiver identity and does not grant receiver role, membership, grant, permission, tenant authority, admission, or session. source_role_ref and source_permission_refs are source bounds only. Allowed clock skew in v1.0 is 0 seconds. The context MUST NOT outlive the source session from which it was issued. Browser-authored copies are never trusted.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "contract_family",
+    "contract_version",
+    "profile",
+    "purpose",
+    "handoff_ref",
+    "transaction_ref",
+    "issuer",
+    "audience",
+    "receiver_ref",
+    "client_ref",
+    "subject_ref",
+    "source_session_ref",
+    "source_context_ref",
+    "organisation_ref",
+    "account_ref",
+    "record_scope_refs",
+    "source_role_ref",
+    "source_permission_refs",
+    "destination_uri",
+    "issued_at",
+    "expires_at",
+    "correlation_ref"
+  ],
+  "properties": {
+    "contract_family": {
+      "const": "source-session-handoff"
+    },
+    "contract_version": {
+      "const": "v1.0"
+    },
+    "profile": {
+      "const": "oauth2-authorization-code-pkce-s256-v1",
+      "description": "Selects the frozen OAuth 2.0 Authorization Code profile with PKCE S256 only."
+    },
+    "purpose": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Handoff purpose. Compared by exact string equality with the initiation. It does not grant receiver authority."
+    },
+    "handoff_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Handoff attempt this context belongs to. Compared by exact string equality with the initiation."
+    },
+    "transaction_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Opaque transaction correlation. Compared by exact string equality with the initiation."
+    },
+    "issuer": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Issuer that attested this context. Mix-up defence compares it with the initiation issuer by exact string equality."
+    },
+    "audience": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Receiver binding. A bound pair requires exact equality with the initiation receiver_ref. Equality is not authenticated identity and does not grant access."
+    },
+    "receiver_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Intended receiving party. Compared by exact string equality with the initiation. Presence does not create a receiver role."
+    },
+    "client_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Registered client binding. Compared by exact string equality with the initiation."
+    },
+    "subject_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Issuer-scoped subject. It is not a receiver account and is not authenticated by schema validity or by hash equality."
+    },
+    "source_session_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Opaque source session reference. It does not issue a receiver session."
+    },
+    "source_context_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Opaque source context reference. It is distinct from source_session_ref under the semantic rules."
+    },
+    "organisation_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Issuer-scoped organisation reference. A browser-authored value is not trusted and does not create receiver membership."
+    },
+    "account_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Issuer-scoped account reference. It is not a receiver account grant."
+    },
+    "record_scope_refs": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/boundedRefArray",
+      "description": "Explicit record scopes attested by the issuer. They must be a non-empty subset of the initiation request. Presence does not grant receiver access."
+    },
+    "source_role_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/boundedRef",
+      "description": "SOURCE BOUND ONLY. It does not grant receiver role, membership, grant, permission, tenant authority, admission, or session."
+    },
+    "source_permission_refs": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/boundedRefArray",
+      "description": "SOURCE BOUNDS ONLY. They do not grant receiver role, membership, grant, permission, tenant authority, admission, or session."
+    },
+    "destination_uri": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/destinationUri",
+      "description": "Destination binding. A bound pair requires exact string equality with the initiation destination_uri."
+    },
+    "issued_at": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/utcTimestamp",
+      "description": "Time the issuer attested this context at server-side redemption."
+    },
+    "expires_at": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/utcTimestamp",
+      "description": "End of the context lifetime. Conformance requires a strictly positive duration no greater than 5 minutes. Allowed clock skew is 0 seconds. expires_at MUST NOT be later than the source session expiry."
+    },
+    "correlation_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Correlation shared with the initiation and any failure for this attempt."
+    }
+  }
+}

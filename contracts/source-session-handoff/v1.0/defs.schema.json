@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json",
+  "title": "Source Session Handoff shared definitions (v1.0)",
+  "description": "Reusable public-safe definitions for source-session-handoff v1.0 wire objects. These definitions constrain structure only. They do not authenticate identity and do not grant permission, role, membership, runtime admission, or access.",
+  "$defs": {
+    "opaqueRef": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/opaqueRef"
+    },
+    "utcTimestamp": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/common/v1.0/defs.schema.json#/$defs/utcTimestamp"
+    },
+    "boundedRef": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\s*]+$",
+      "description": "Opaque source-attested bound. The ASCII asterisk and whitespace are forbidden, so a wildcard cannot be expressed. Presence does not grant receiver access."
+    },
+    "boundedRefArray": {
+      "type": "array",
+      "description": "Non-empty unique bounds. Ascending UTF-16 code-unit order is required on the wire and enforced by conformance tests. Empty, duplicate, and wildcard values are forbidden.",
+      "items": {
+        "$ref": "#/$defs/boundedRef"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "destinationUri": {
+      "type": "string",
+      "minLength": 9,
+      "pattern": "^https://(?:(?![0-9.]+(?::|/|$))(?!(?:[^.]+\\.)*0[xX][0-9A-Fa-f]+(?:\\.|:|/|$))(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)*[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?|(?:(?:0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}(?:0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5])|\\[[A-Za-z0-9:.]+\\])(?::(?:0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(?:/(?:[A-Za-z0-9._~!$&'()+,;=:@-]|%[0-9A-Fa-f]{2})*)*$",
+      "description": "Absolute https URI with a nonempty host: a DNS name, a canonical dotted-decimal IPv4 address, or a bracketed IPv6 literal. A DNS label may begin with a digit. A host of only digits and dots, or a label that is a hexadecimal integer, is not a DNS name. No user information, query, fragment, asterisk, whitespace, backslash, empty host, empty port, or port above 65535. Hexadecimal, octal, integer, and other non-canonical IPv4 spellings are excluded. The bracketed form is not an IPv6 grammar; well-formed IPv6, including an embedded IPv4 only in the final 32 bits, is the standards-compliant parser used by conformance. Empty path segments such as /a//callback remain valid. Exact binding is byte-for-byte equality of the original strings and is not URL canonicalization."
+    },
+    "pkceVerifier": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9\\-._~]{43,128}$",
+      "description": "RFC 7636 code verifier: ASCII unreserved characters, 43 to 128 characters. Server-side only. It is not a browser parameter and it is not durable browser state."
+    },
+    "pkceS256Challenge": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$",
+      "description": "Canonical unpadded BASE64URL of the 32-byte SHA-256 digest. The final character is limited to the spellings whose unused bits are zero. The only challenge method in v1.0 is S256."
+    },
+    "browserState": {
+      "type": "string",
+      "minLength": 22,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9\\-._~]{22,128}$",
+      "description": "High-entropy opaque browser correlation of at least 128 bits. It is bound server-side to transaction_ref. It is not required to equal transaction_ref."
+    },
+    "authorizationCode": {
+      "type": "string",
+      "minLength": 22,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9\\-._~]+$",
+      "description": "Opaque single-use authorization code. The issuer MUST draw at least 128 bits from a cryptographically secure random generator. The maximum lifetime is 60 seconds."
+    }
+  }
+}

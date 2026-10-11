@@ -8,19 +8,21 @@ Public contract schemas and examples for third-party systems that exchange struc
 - request / result / status examples
 - capability-use contract examples
 - non-authority declarations
+- source-session handoff shapes that do not grant access
 - executable public schemas and conformance fixtures for published versions
 
 ## Contract families
 
-This repository defines public-safe contract shapes in five families:
+This repository defines public-safe contract shapes in six families:
 
 1. **Execution Request Contracts** — a consumer submits a structured request; the service returns an accepted/denied outcome with a verifiable result reference.
 2. **Capability Consumption Contracts** — a consumer requests use of a named capability under an agreed scope.
 3. **Status / Result Contracts** — a consumer queries or receives the outcome of a prior request: final state plus a verifiable result reference.
 4. **Error / Denial Contracts** — every request may be denied or fail; denial and error are first-class, contracted outcomes.
 5. **Professional Authority Evidence Contracts** — a professional portal or credential-record system publishes one immutable, integrity-bound observation of one professional credential revision; evidence is not authority, admission, or execution permission.
+6. **Source Session Handoff Contracts** — a receiver initiates one profile-bound handoff and, after server-side redemption, may hold an issuer-attested context. That context is a source-attested bound only. It does not authenticate identity and does not grant permission, role, membership, runtime admission, or access.
 
-v0.2 publishes executable wire objects for families 1, 3, and 4. Capability consumption remains at the frozen v0.1 baseline; no v0.2 of that family is published here.
+v0.2 publishes executable wire objects for families 1, 3, and 4. Capability consumption remains at the frozen v0.1 baseline; no v0.2 of that family is published here. Source session handoff is a separate v1.0 family and does not revise families 1–5.
 
 ## Versions
 
@@ -28,6 +30,7 @@ Contract shapes are versioned. A published version is a compatibility reference,
 
 - **v0.1** is a published loose baseline and is frozen. v0.1 schemas and examples are unchanged. They remain documentation-wrapper documents (illustration fields may sit beside request and response in one file). That wrapper is the v0.1 compatibility reference, not the v0.2 wire contract.
 - **v0.2** is a new public wire grammar. Implementations select it explicitly with `contract_family` and `contract_version`. v0.2 does not silently migrate v0.1.
+- **v1.0** is used by more than one family. `contract_version` alone does not select a shape. Professional Authority Evidence and Source Session Handoff are separate v1.0 families. Neither silently migrates v0.1 or v0.2, and Source Session Handoff does not revise Professional Authority Evidence.
 
 See `semantics/versioning-v0.2.md`.
 
@@ -58,13 +61,23 @@ Shared public definitions live in `contracts/common/v0.2/defs.schema.json`.
 
 ## v1.0 wire objects
 
-v1.0 publishes Professional Authority Evidence as a standalone evidence wire object.
+v1.0 publishes two separately selected families. Implementations MUST read `contract_family` and, for source session handoff, `profile`.
 
 | Family | Wire object | Schema |
 | --- | --- | --- |
 | professional-authority-evidence | evidence only | `contracts/professional-authority-evidence/v1.0/evidence.schema.json` |
+| source-session-handoff | initiation | `contracts/source-session-handoff/v1.0/initiation.schema.json` |
+| source-session-handoff | authorization request | `contracts/source-session-handoff/v1.0/authorization-request.schema.json` |
+| source-session-handoff | authorization response | `contracts/source-session-handoff/v1.0/authorization-response.schema.json` |
+| source-session-handoff | redemption request | `contracts/source-session-handoff/v1.0/redemption-request.schema.json` |
+| source-session-handoff | redemption response | `contracts/source-session-handoff/v1.0/redemption-response.schema.json` |
+| source-session-handoff | authenticated context | `contracts/source-session-handoff/v1.0/authenticated-context.schema.json` |
+| source-session-handoff | trusted-source registration | `contracts/source-session-handoff/v1.0/trusted-source-registration.schema.json` |
+| source-session-handoff | failure | `contracts/source-session-handoff/v1.0/failure.schema.json` |
 
-Shared public definitions for this family live in `contracts/common/v1.0/defs.schema.json`. Evidence is not authority, admission, or execution permission.
+Shared public definitions for Professional Authority Evidence live in `contracts/common/v1.0/defs.schema.json`. Evidence is not authority, admission, or execution permission.
+
+Source Session Handoff v1.0 uses profile `oauth2-authorization-code-pkce-s256-v1`. It is the user-entry session handoff only. It does not define the Business Growth operational data gateway and it does not absorb a Business Growth operational API. `AgentBusinessLoadRequest` and `AgentBusinessLoadResult` are a post-session receiver companion contract, not this handoff. A valid wire object does not authenticate receiver identity and does not grant permission, role, membership, runtime admission, or access. Source role and permission references are source bounds only. Redemption success is public option A: a compact JWS whose payload is exactly one authenticated context. There is no refresh token. See `semantics/source-session-handoff-v1.0.md`.
 
 ## Identity model (v0.2)
 
@@ -124,4 +137,4 @@ Internal implementation, enforcement logic, and service topology are out of scop
 npm test
 ```
 
-This command validates frozen v0.1 examples against v0.1 schemas and v0.2 wire fixtures against v0.2 schemas.
+This command validates frozen v0.1 examples against v0.1 schemas, v0.2 wire fixtures against v0.2 schemas, professional-authority-evidence v1.0 fixtures, and source-session-handoff v1.0 fixtures.

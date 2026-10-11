@@ -1,0 +1,28 @@
+{
+  "contract_family": "source-session-handoff",
+  "contract_version": "v1.0",
+  "profile": "oauth2-authorization-code-pkce-s256-v1",
+  "purpose": "user-entry-session-handoff",
+  "handoff_ref": "handoff-placeholder-001",
+  "transaction_ref": "transaction-placeholder-001",
+  "issuer": "issuer-placeholder-001",
+  "audience": "receiver-placeholder-001",
+  "receiver_ref": "receiver-placeholder-001",
+  "client_ref": "client-placeholder-001",
+  "subject_ref": "subject-placeholder-001",
+  "source_session_ref": "source-session-placeholder-001",
+  "source_context_ref": "source-session-placeholder-001",
+  "organisation_ref": "organisation-placeholder-001",
+  "account_ref": "account-placeholder-001",
+  "record_scope_refs": [
+    "record-scope-placeholder-001"
+  ],
+  "source_role_ref": "source-role-placeholder-001",
+  "source_permission_refs": [
+    "source-permission-placeholder-001"
+  ],
+  "destination_uri": "https://receiver.example/session-handoff/callback",
+  "issued_at": "2026-08-15T00:00:20Z",
+  "expires_at": "2026-08-15T00:04:20Z",
+  "correlation_ref": "correlation-placeholder-001"
+}

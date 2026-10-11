@@ -1,0 +1,14 @@
+{
+  "contract_family": "source-session-handoff",
+  "contract_version": "v1.0",
+  "profile": "oauth2-authorization-code-pkce-s256-v1",
+  "grant_type": "authorization_code",
+  "client_ref": "client-placeholder-001",
+  "destination_uri": "https://receiver.example/session-handoff/callback",
+  "authorization_code": "q7wXmN3kP0sLdR4tVbC8uHjA2eFgK6nQoIyU",
+  "code_verifier": "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+  "handoff_ref": "handoff-placeholder-001",
+  "transaction_ref": "transaction-placeholder-001",
+  "correlation_ref": "correlation-placeholder-001",
+  "purpose": "user-entry-session-handoff"
+}

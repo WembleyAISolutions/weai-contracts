@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/authorization-response.schema.json",
+  "title": "Source Session Handoff — authorization response (v1.0)",
+  "description": "Closed browser callback for a redirect that is already a safe registered destination. Success is code and state. Denial is one safe OAuth error and state. Identity, role, scope, context, destination, verifier, diagnostics, and tokens are forbidden. This object is not used when the client or destination is not trusted: the browser is not redirected to the supplied destination.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "unevaluatedProperties": false,
+      "required": ["code", "state"],
+      "properties": {
+        "code": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/authorizationCode",
+          "description": "Opaque single-use authorization code with at least 128 bits of entropy and a maximum lifetime of 60 seconds."
+        },
+        "state": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/browserState"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "unevaluatedProperties": false,
+      "required": ["error", "state"],
+      "properties": {
+        "error": {
+          "enum": [
+            "invalid_request",
+            "unauthorized_client",
+            "access_denied",
+            "unsupported_response_type",
+            "server_error",
+            "temporarily_unavailable"
+          ],
+          "description": "Safe OAuth error. No error_description, identity, role, scope, or machine diagnostic is permitted."
+        },
+        "state": {
+          "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/browserState"
+        }
+      }
+    }
+  ]
+}

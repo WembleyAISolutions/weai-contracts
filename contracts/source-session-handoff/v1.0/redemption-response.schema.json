@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/redemption-response.schema.json",
+  "title": "Source Session Handoff — redemption response (v1.0)",
+  "description": "Closed success response for server-side redemption. Public option A: assertion is a compact JWS whose payload is exactly one authenticated-context v1.0 JSON object. There is no second claim vocabulary and no refresh_token. A failed redemption uses the public failure object, not a private token-error object. Unknown fields are rejected.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "contract_family",
+    "contract_version",
+    "profile",
+    "status",
+    "token_type",
+    "assertion_format",
+    "assertion",
+    "expires_in"
+  ],
+  "properties": {
+    "contract_family": {
+      "const": "source-session-handoff"
+    },
+    "contract_version": {
+      "const": "v1.0"
+    },
+    "profile": {
+      "const": "oauth2-authorization-code-pkce-s256-v1"
+    },
+    "status": {
+      "const": "issued"
+    },
+    "token_type": {
+      "const": "Bearer"
+    },
+    "assertion_format": {
+      "const": "compact-jws-authenticated-context-v1"
+    },
+    "assertion": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+      "description": "Compact JWS. The protected header requires alg and kid and contains no other members. alg none, jku, jwk, x5u, x5c, and critical headers are rejected. The payload is exactly one authenticated-context object."
+    },
+    "expires_in": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 300,
+      "description": "Exact whole-second lifetime of the authenticated context, from 1 through 300 inclusive. A non-integral context lifetime makes this response invalid."
+    }
+  }
+}

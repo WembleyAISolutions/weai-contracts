@@ -1,0 +1,883 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/failure.schema.json",
+  "title": "Source Session Handoff — failure wire (v1.0)",
+  "description": "Public-safe closed failure for source-session-handoff v1.0. outcome is the high-level class. code is the stable machine code. A valid failure does not authenticate identity, grant access, or carry diagnostic material. Only ISSUER_UNAVAILABLE and DEPENDENCY_UNAVAILABLE are automatic-machine retryable. Browser redirects do not carry this object.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "contract_family",
+    "contract_version",
+    "profile",
+    "outcome",
+    "code",
+    "retryable",
+    "correlation_ref",
+    "occurred_at"
+  ],
+  "properties": {
+    "contract_family": {
+      "const": "source-session-handoff"
+    },
+    "contract_version": {
+      "const": "v1.0"
+    },
+    "profile": {
+      "const": "oauth2-authorization-code-pkce-s256-v1",
+      "description": "Profile of the handoff attempt that failed."
+    },
+    "outcome": {
+      "enum": [
+        "malformed",
+        "unverified",
+        "expired",
+        "replayed",
+        "identity_not_bound",
+        "scope_invalid",
+        "permission_denied",
+        "unsupported_version",
+        "dependency_unavailable"
+      ],
+      "description": "Closed high-level outcome vocabulary. No other outcome is valid in v1.0."
+    },
+    "code": {
+      "enum": [
+        "SOURCE_AUTHENTICATION_REQUIRED",
+        "UNKNOWN_CLIENT",
+        "CLIENT_DISABLED",
+        "CLIENT_REVOKED",
+        "DESTINATION_MISMATCH",
+        "UNSUPPORTED_PROFILE",
+        "UNSUPPORTED_CONTRACT_VERSION",
+        "INVALID_PKCE_METHOD",
+        "PKCE_MISMATCH",
+        "CODE_EXPIRED",
+        "CODE_REPLAYED",
+        "CODE_UNKNOWN",
+        "SOURCE_ACCOUNT_DISABLED",
+        "ORGANISATION_MISMATCH",
+        "RECORD_SCOPE_INVALID",
+        "SOURCE_ROLE_CONTEXT_INVALID",
+        "MALFORMED_REQUEST",
+        "MALFORMED_REDEMPTION_RESPONSE",
+        "MALFORMED_AUTHENTICATED_CONTEXT",
+        "ISSUER_MISMATCH",
+        "AUDIENCE_MISMATCH",
+        "CONTEXT_EXPIRED",
+        "ISSUER_UNAVAILABLE",
+        "DEPENDENCY_UNAVAILABLE",
+        "PURPOSE_MISMATCH",
+        "HANDOFF_MISMATCH",
+        "TRANSACTION_MISMATCH",
+        "CORRELATION_MISMATCH"
+      ],
+      "description": "Stable machine code. It determines outcome and retryable. It is not a browser query parameter."
+    },
+    "retryable": {
+      "type": "boolean",
+      "description": "True only for ISSUER_UNAVAILABLE and DEPENDENCY_UNAVAILABLE. SOURCE_AUTHENTICATION_REQUIRED is false."
+    },
+    "correlation_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Correlation for this failed attempt. Required even when handoff_ref is omitted."
+    },
+    "handoff_ref": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/opaqueRef",
+      "description": "Handoff attempt when one has already been assigned. Optional."
+    },
+    "occurred_at": {
+      "$ref": "https://github.com/WembleyAISolutions/weai-contracts/contracts/source-session-handoff/v1.0/defs.schema.json#/$defs/utcTimestamp",
+      "description": "Time this failure was recorded. Calendar validity is a conformance requirement and a schema match alone is not conformance."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "SOURCE_AUTHENTICATION_REQUIRED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "identity_not_bound"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "UNKNOWN_CLIENT"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unverified"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "CLIENT_DISABLED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unverified"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "CLIENT_REVOKED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unverified"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "DESTINATION_MISMATCH"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unverified"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "UNSUPPORTED_PROFILE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unsupported_version"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "UNSUPPORTED_CONTRACT_VERSION"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unsupported_version"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "INVALID_PKCE_METHOD"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "malformed"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "PKCE_MISMATCH"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unverified"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "CODE_EXPIRED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "expired"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "CODE_REPLAYED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "replayed"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "CODE_UNKNOWN"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unverified"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "SOURCE_ACCOUNT_DISABLED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "permission_denied"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "ORGANISATION_MISMATCH"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unverified"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "RECORD_SCOPE_INVALID"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "scope_invalid"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "SOURCE_ROLE_CONTEXT_INVALID"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "identity_not_bound"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "MALFORMED_REQUEST"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "malformed"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "MALFORMED_REDEMPTION_RESPONSE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "malformed"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "MALFORMED_AUTHENTICATED_CONTEXT"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "malformed"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "ISSUER_MISMATCH"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unverified"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "AUDIENCE_MISMATCH"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unverified"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "CONTEXT_EXPIRED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "expired"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "ISSUER_UNAVAILABLE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "dependency_unavailable"
+          },
+          "retryable": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "DEPENDENCY_UNAVAILABLE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "dependency_unavailable"
+          },
+          "retryable": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "PURPOSE_MISMATCH"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unverified"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "HANDOFF_MISMATCH"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unverified"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "TRANSACTION_MISMATCH"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unverified"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "const": "CORRELATION_MISMATCH"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "unverified"
+          },
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "const": "malformed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "const": "unverified"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "const": "expired"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "const": "replayed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "const": "identity_not_bound"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "const": "scope_invalid"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "const": "permission_denied"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "const": "unsupported_version"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retryable": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "const": "dependency_unavailable"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retryable": {
+            "const": true
+          }
+        }
+      }
+    }
+  ]
+}
