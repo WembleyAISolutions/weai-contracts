@@ -42,8 +42,8 @@
       "type": "string",
       "minLength": 43,
       "maxLength": 43,
-      "pattern": "^[A-Za-z0-9_-]{43}$",
-      "description": "BASE64URL(SHA256(ASCII(code_verifier))) with no padding. The only challenge method in v1.0 is S256."
+      "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$",
+      "description": "Canonical unpadded BASE64URL of the 32-byte SHA-256 digest. The final character is limited to the spellings whose unused bits are zero. The only challenge method in v1.0 is S256."
     },
     "browserState": {
       "type": "string",

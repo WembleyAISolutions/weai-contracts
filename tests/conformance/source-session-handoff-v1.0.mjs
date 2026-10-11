@@ -21,6 +21,7 @@ import {
   inspectCompactJws,
   integralSecondLifetime,
   jwsHeaderAccepted,
+  pkceChallengeCanonical,
   pkceChallengeFor,
   pkceVerifierValid,
   prefixScanEvidence,
@@ -2666,12 +2667,13 @@ test("source-session-handoff rejects hexadecimal integer DNS labels on every URI
   const forbidden = "https://0xdead.example/callback";
   const allowListed = publishedRegistration();
   allowListed.destination_uris = [forbidden];
+  assert.equal(validatorFor(REGISTRATION_SCHEMA)(allowListed), false);
   assert.equal(
     registrationPermitsRedirect(allowListed, allowListed.client_ref, forbidden),
     false,
   );
   const mismatch = redemptionOf({ registration: allowListed });
-  assert.equal(mismatch.code, "DESTINATION_MISMATCH");
+  assert.equal(mismatch.code, "UNKNOWN_CLIENT");
   assert.equal(mismatch.codeConsumed, false);
   const badEndpoint = publishedRegistration();
   badEndpoint.authorization_endpoint = "https://api.0xdead.example/callback";
@@ -2856,8 +2858,71 @@ test("source-session-handoff rejects a trailing DNS root dot", () => {
   const allowListed = publishedRegistration();
   allowListed.destination_uris = [uri];
   const mismatch = redemptionOf({ registration: allowListed });
-  assert.equal(mismatch.code, "DESTINATION_MISMATCH");
+  assert.equal(mismatch.code, "UNKNOWN_CLIENT");
   assert.equal(mismatch.codeConsumed, false);
   assert.equal(destinationUriValid("https://receiver.example/callback"), true);
   assert.equal(destinationUriValid("https://[::1]/callback"), true);
+});
+
+test("a registration is trusted only when the closed registration schema holds", () => {
+  const response = loadJson(REDEMPTION_RESPONSE_EXAMPLE);
+  const context = loadJson(CONTEXT_EXAMPLE);
+  const registration = publishedRegistration();
+  assert.equal(validatorFor(REGISTRATION_SCHEMA)(registration), true);
+  assert.equal(redemptionResponseMatchesContext(response, context, registration), true);
+  registration.client_secret = "not-public-verification-material";
+  assert.equal(validatorFor(REGISTRATION_SCHEMA)(registration), false);
+  assert.equal(redemptionResponseMatchesContext(response, context, registration), false);
+  assert.equal(registrationPermitsRedirect(registration, registration.client_ref, registration.destination_uris[0]), false);
+  const redeemed = redemptionOf({ registration });
+  assert.equal(redeemed.code, "UNKNOWN_CLIENT");
+  assert.equal(redeemed.codeConsumed, false);
+  assertNoSession(redeemed);
+  const disabled = publishedRegistration();
+  disabled.status = "disabled";
+  assert.equal(redemptionOf({ registration: disabled }).code, "CLIENT_DISABLED");
+});
+
+test("browser callback state matches the published grammar before equality", () => {
+  const success = loadJson(AUTHZ_SUCCESS_EXAMPLE);
+  const denial = loadJson(AUTHZ_DENIAL_EXAMPLE);
+  const minimum = "a".repeat(22);
+  const representative = success.state;
+  const maximum = "b".repeat(128);
+  for (const state of [minimum, representative, maximum]) {
+    assert.equal(browserCallbackQueryAllowed({ ...success, state }, state), true);
+    assert.equal(browserCallbackQueryAllowed({ ...denial, state }, state), true);
+  }
+  assert.equal(browserCallbackQueryAllowed({ state: "x", code: success.code }, "x"), false);
+  const overlong = "c".repeat(129);
+  assert.equal(browserCallbackQueryAllowed({ state: overlong, code: success.code }, overlong), false);
+  const whitespace = `${minimum} `;
+  assert.equal(browserCallbackQueryAllowed({ state: whitespace, code: success.code }, whitespace), false);
+  assert.equal(browserCallbackQueryAllowed({ ...success, state: "x" }, representative), false);
+  assert.equal(browserCallbackQueryAllowed({ ...success, state: representative }, "x"), false);
+  assert.equal(browserCallbackQueryAllowed({ ...success, state: minimum }, maximum), false);
+  assert.equal(browserCallbackQueryAllowed({ ...denial, state: minimum }, maximum), false);
+});
+
+test("an s256 challenge is the canonical encoding of exactly 32 bytes", () => {
+  const request = loadJson(AUTHZ_REQUEST_EXAMPLE);
+  const challenge = request.code_challenge;
+  const alias = `${challenge.slice(0, -1)}N`;
+  assert.equal(validatorFor(AUTHZ_REQUEST_SCHEMA)(request), true);
+  assert.equal(pkceChallengeCanonical(challenge), true);
+  assert.equal(pkceChallengeCanonical(pkceChallengeFor("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")), true);
+  assert.equal(pkceChallengeFor("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"), challenge);
+  assert.equal(Buffer.from(alias, "base64url").equals(Buffer.from(challenge, "base64url")), true);
+  request.code_challenge = alias;
+  assert.equal(validatorFor(AUTHZ_REQUEST_SCHEMA)(request), false);
+  assert.equal(pkceChallengeCanonical(alias), false);
+  assert.equal(pkceChallengeCanonical(`${challenge}A`), false);
+  assert.equal(pkceChallengeCanonical(challenge.slice(0, -1)), false);
+  assert.equal(pkceChallengeCanonical(`${challenge.slice(0, -1)}*`), false);
+  const record = codeRecordFor(publishedRedemptionRequest());
+  record.code_challenge = alias;
+  const redeemed = redemptionOf({ record });
+  assert.equal(redeemed.code, "PKCE_MISMATCH");
+  assert.equal(redeemed.codeConsumed, false);
+  assertNoSession(redeemed);
 });
