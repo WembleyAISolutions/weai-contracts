@@ -6,6 +6,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const CONTEXT_SCHEMA = "contracts/source-session-handoff/v1.0/authenticated-context.schema.json";
+const REGISTRATION_SCHEMA = "contracts/source-session-handoff/v1.0/trusted-source-registration.schema.json";
 
 const FAMILY = "source-session-handoff";
 const VERSION = "v1.0";
@@ -357,20 +358,32 @@ export function contextSemanticsHold(context) {
 }
 
 let authenticatedContextSchemaValid = null;
+let registrationSchemaValid = null;
+
+function handoffAjv() {
+  const ajv = new Ajv2020({
+    allErrors: true,
+    strict: true,
+    strictRequired: false,
+  });
+  ajv.addSchema(loadJson("contracts/common/v0.2/defs.schema.json"));
+  ajv.addSchema(loadJson("contracts/common/v1.0/defs.schema.json"));
+  ajv.addSchema(loadJson("contracts/source-session-handoff/v1.0/defs.schema.json"));
+  return ajv;
+}
 
 function authenticatedContextSchemaHolds(payload) {
   if (authenticatedContextSchemaValid === null) {
-    const ajv = new Ajv2020({
-      allErrors: true,
-      strict: true,
-      strictRequired: false,
-    });
-    ajv.addSchema(loadJson("contracts/common/v0.2/defs.schema.json"));
-    ajv.addSchema(loadJson("contracts/common/v1.0/defs.schema.json"));
-    ajv.addSchema(loadJson("contracts/source-session-handoff/v1.0/defs.schema.json"));
-    authenticatedContextSchemaValid = ajv.compile(loadJson(CONTEXT_SCHEMA));
+    authenticatedContextSchemaValid = handoffAjv().compile(loadJson(CONTEXT_SCHEMA));
   }
   return authenticatedContextSchemaValid(payload) === true;
+}
+
+function registrationSchemaHolds(registration) {
+  if (registrationSchemaValid === null) {
+    registrationSchemaValid = handoffAjv().compile(loadJson(REGISTRATION_SCHEMA));
+  }
+  return registrationSchemaValid(registration) === true;
 }
 
 function authenticatedContextSemanticsHold(payload) {
@@ -701,6 +714,14 @@ export function pkceChallengeFor(verifier) {
   return createHash("sha256").update(verifier, "ascii").digest("base64url");
 }
 
+export function pkceChallengeCanonical(value) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(value)) {
+    return false;
+  }
+  const decoded = Buffer.from(value, "base64url");
+  return decoded.length === 32 && decoded.toString("base64url") === value;
+}
+
 export function integralSecondLifetime(start, end) {
   const left = instantParts(start);
   const right = instantParts(end);
@@ -736,11 +757,18 @@ export function registrationEndpointsAccepted(registration) {
     && destinationUriValid(registration.token_endpoint);
 }
 
+function browserStateWellFormed(value) {
+  return typeof value === "string" && /^[A-Za-z0-9\-._~]{22,128}$/.test(value);
+}
+
 export function browserCallbackQueryAllowed(params, expectedState) {
-  if (typeof expectedState !== "string" || expectedState.length === 0) {
+  if (!browserStateWellFormed(expectedState)) {
     return false;
   }
   if (params === null || typeof params !== "object" || Array.isArray(params)) {
+    return false;
+  }
+  if (!browserStateWellFormed(params.state)) {
     return false;
   }
   const keys = Object.keys(params);
@@ -762,7 +790,7 @@ export function registrationPermitsRedirect(registration, clientRef, destination
   if (registration.status !== "enabled" || registration.client_ref !== clientRef) {
     return false;
   }
-  if (!registrationEndpointsAccepted(registration)) {
+  if (!registrationSchemaHolds(registration) || !registrationEndpointsAccepted(registration)) {
     return false;
   }
   if (!destinationUriValid(destination) || !Array.isArray(registration.destination_uris)) {
@@ -991,6 +1019,7 @@ function registrationBindsContext(registration, context) {
     return false;
   }
   return registration.status === "enabled"
+    && registrationSchemaHolds(registration)
     && registrationEndpointsAccepted(registration)
     && context.contract_family === FAMILY
     && context.contract_version === VERSION
@@ -1102,7 +1131,7 @@ export function assessRedemption(input) {
   if (registration.status !== "enabled") {
     return machineResult("UNKNOWN_CLIENT");
   }
-  if (!registrationEndpointsAccepted(registration)) {
+  if (!registrationSchemaHolds(registration) || !registrationEndpointsAccepted(registration)) {
     return machineResult("UNKNOWN_CLIENT");
   }
   if (!Array.isArray(registration.destination_uris) || !registration.destination_uris.includes(request.destination_uri)) {
@@ -1150,7 +1179,7 @@ export function assessRedemption(input) {
     return machineResult("CODE_REPLAYED");
   }
   const challenge = pkceChallengeFor(request.code_verifier);
-  if (challenge === null || challenge !== record.code_challenge) {
+  if (challenge === null || !pkceChallengeCanonical(record.code_challenge) || challenge !== record.code_challenge) {
     return machineResult("PKCE_MISMATCH");
   }
   if (request.purpose !== record.purpose || request.purpose !== registration.purpose) {
