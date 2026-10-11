@@ -81,9 +81,9 @@ On the authorization redirect, query parameter names are these field names. This
 
 `destination_uri` MUST pass the same section 8 validation used for initiation and redemption. The structural schema pattern is only a screen. A bracketed host that the pattern admits and the parser rejects, including `https://[:::1]/callback`, is not an accepted authorization destination.
 
-`state` is an independent high-entropy opaque browser correlation. The runtime binds it server-side to `transaction_ref`. `state` MUST NOT be required to equal `transaction_ref`.
+`state` is an independent high-entropy opaque browser correlation. The runtime binds it server-side to `transaction_ref`. `state` MUST NOT be required to equal `transaction_ref`. Both the stored state and the callback state MUST match the browser-state grammar before they are compared: 22 to 128 ASCII unreserved characters. Two equal values that fail that grammar are rejected.
 
-The PKCE verifier uses the RFC 7636 verifier grammar: ASCII unreserved characters, 43 to 128 characters. The challenge is `BASE64URL(SHA256(ASCII(verifier)))` with no padding. `plain` is rejected.
+The PKCE verifier uses the RFC 7636 verifier grammar: ASCII unreserved characters, 43 to 128 characters. The challenge is the canonical unpadded `BASE64URL(SHA256(ASCII(verifier)))` of that exact 32-byte digest. A 43-character alias whose unused final bits are non-zero is not that challenge. `plain` is rejected.
 
 The authorization request MUST NOT carry, and the browser MUST NOT be shown:
 
@@ -199,7 +199,7 @@ Required public fields: `registration_version`, `issuer`, `client_ref`, `receive
 
 The permitted algorithm set is `RS256`, `RS384`, `RS512`, `ES256`, `ES384`, `ES512`, and `EdDSA`. Registration MUST NOT allow any other algorithm.
 
-Registration contains public verification material only. It MUST NOT contain receiver role, receiver membership, grant, permission, receiver session authority, private JWK material, or a source or client secret. Caller-supplied key URLs are not trust. `jku`, `x5u`, and embedded private parameters are rejected. Private JWK members include `d`, `p`, `q`, `dp`, `dq`, `qi`, `oth`, and `k`. A key that carries `oth` is not a public verification key, even when a signature over the public `n` and `e` would otherwise verify.
+The complete registration object MUST satisfy the published closed registration schema before any conformance path trusts it. An unknown field, including `client_secret`, is not a usable registration. In redemption that failure is `UNKNOWN_CLIENT` and does not consume the code. Status classification for `disabled` and `revoked` remains in force. Registration contains public verification material only. It MUST NOT contain receiver role, receiver membership, grant, permission, receiver session authority, private JWK material, or a source or client secret. Caller-supplied key URLs are not trust. `jku`, `x5u`, and embedded private parameters are rejected. Private JWK members include `d`, `p`, `q`, `dp`, `dq`, `qi`, `oth`, and `k`. A key that carries `oth` is not a public verification key, even when a signature over the public `n` and `e` would otherwise verify.
 
 `status` `disabled` is machine code `CLIENT_DISABLED`. `revoked` is `CLIENT_REVOKED`. A client that is not the registered client is `UNKNOWN_CLIENT`. Each of those results forbids redirect to the supplied destination.
 
