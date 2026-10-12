@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import {
+  assessAuthorizationRequest,
   assessRedemption,
   assessSourceSessionHandoff,
   authorizationRequestDestinationAccepted,
@@ -3240,5 +3241,300 @@ test("source-session-handoff validates every registered destination before trust
     assert.deepEqual(registration.destination_uris, [PUBLISHED_DESTINATION, PARSER_INVALID_DESTINATION]);
     assert.deepEqual(rejectedRecord, rejectedRecordBefore);
     assert.equal(rejectedRecord.consumed, false);
+  });
+});
+
+function assessPublishedAuthorization(overrides = {}) {
+  const request = overrides.request ?? loadJson(AUTHZ_REQUEST_EXAMPLE);
+  const initiation = overrides.initiation ?? loadJson(INITIATION_EXAMPLE);
+  const registration = Object.hasOwn(overrides, "registration") ? overrides.registration : publishedRegistration();
+  const stored = loadJson(AUTHZ_REQUEST_EXAMPLE);
+  return assessAuthorizationRequest({
+    request,
+    schemaValidRequest: Object.hasOwn(overrides, "schemaValidRequest")
+      ? overrides.schemaValidRequest
+      : validatorFor(AUTHZ_REQUEST_SCHEMA)(request),
+    initiation,
+    registration,
+    expectedState: Object.hasOwn(overrides, "expectedState") ? overrides.expectedState : stored.state,
+    expectedCodeChallenge: Object.hasOwn(overrides, "expectedCodeChallenge")
+      ? overrides.expectedCodeChallenge
+      : stored.code_challenge,
+    issuerUnavailable: overrides.issuerUnavailable ?? false,
+    dependencyAvailable: overrides.dependencyAvailable ?? true,
+  });
+}
+
+function rsaMaterial(bits, alg = "RS256", kid = `rsa-${alg}-${bits}`) {
+  const pair = generateKeyPairSync("rsa", { modulusLength: bits });
+  return { ...pair, jwk: publicJwk(pair.publicKey, kid, alg) };
+}
+
+function rsaSignatureHolds(assertion, jwk) {
+  const [header, payload, signature] = assertion.split(".");
+  const nodeAlg = jwk.alg === "RS384" ? "RSA-SHA384" : jwk.alg === "RS512" ? "RSA-SHA512" : "RSA-SHA256";
+  const key = createPublicKey({ key: jwk, format: "jwk" });
+  return verify(nodeAlg, Buffer.from(`${header}.${payload}`), key, Buffer.from(signature, "base64url"));
+}
+
+function signedContextResponse(jwk, privateKey, alg) {
+  const response = loadJson(REDEMPTION_RESPONSE_EXAMPLE);
+  const context = loadJson(CONTEXT_EXAMPLE);
+  response.assertion = signedAssertion({ alg, kid: jwk.kid }, context, privateKey);
+  return { response, context };
+}
+
+function assertWeakRegistrationRejected(registration, label) {
+  const record = codeRecordFor(publishedRedemptionRequest());
+  const recordBefore = structuredClone(record);
+  const registrationBefore = structuredClone(registration);
+  assert.equal(
+    registrationPermitsRedirect(registration, registration.client_ref, registration.destination_uris[0]),
+    false,
+    label,
+  );
+  assert.equal(
+    redemptionResponseMatchesContext(
+      loadJson(REDEMPTION_RESPONSE_EXAMPLE),
+      loadJson(CONTEXT_EXAMPLE),
+      registration,
+    ),
+    false,
+    label,
+  );
+  const redeemed = redemptionOf({ registration, codeRecord: record });
+  assertClosedRejection(redeemed, "UNKNOWN_CLIENT", label);
+  assert.deepEqual(record, recordBefore, label);
+  assert.equal(record.consumed, false, label);
+  const authorized = assessPublishedAuthorization({ registration });
+  assert.equal(authorized.authorizationAccepted, false, label);
+  assert.equal(authorized.codeIssued, false, label);
+  assert.equal(authorized.code, "UNKNOWN_CLIENT", label);
+  assertNoSession(authorized);
+  assert.deepEqual(registration, registrationBefore, label);
+}
+
+test("source-session-handoff rejects RSA moduli below 2048 bits", async (t) => {
+  const validateRegistration = validatorFor(REGISTRATION_SCHEMA);
+
+  await t.test("2048, 3072, and 4096 bit RSA keys and EC and EdDSA keys still verify", () => {
+    for (const bits of [2048, 3072, 4096]) {
+      const key = rsaMaterial(bits);
+      const modulus = Buffer.from(key.jwk.n, "base64url");
+      assert.equal(modulus.length * 8, bits, `${bits} byte length`);
+      assert.ok(modulus[0] >= 0x80, `${bits} top bit`);
+      const registration = registrationWithKeys([key.jwk], ["RS256"]);
+      assert.equal(validateRegistration(registration), true, `${bits} schema`);
+      const { response, context } = signedContextResponse(key.jwk, key.privateKey, "RS256");
+      assert.equal(rsaSignatureHolds(response.assertion, key.jwk), true, `${bits} node verify`);
+      assert.equal(redemptionResponseMatchesContext(response, context, registration), true, bits);
+      assert.equal(
+        registrationPermitsRedirect(registration, registration.client_ref, registration.destination_uris[0]),
+        true,
+        bits,
+      );
+      const redeemed = redemptionOf({ registration });
+      assert.equal(redeemed.failure, null, bits);
+      assert.equal(redeemed.codeConsumed, true, bits);
+      const authorized = assessPublishedAuthorization({ registration });
+      assert.equal(authorized.authorizationAccepted, true, bits);
+      assert.equal(authorized.codeIssued, false, bits);
+      assertNoSession(authorized);
+    }
+    for (const alg of ["RS384", "RS512"]) {
+      const key = rsaMaterial(2048, alg, `rsa-${alg}-2048`);
+      const registration = registrationWithKeys([key.jwk], [alg]);
+      const { response, context } = signedContextResponse(key.jwk, key.privateKey, alg);
+      assert.equal(rsaSignatureHolds(response.assertion, key.jwk), true, alg);
+      assert.equal(redemptionResponseMatchesContext(response, context, registration), true, alg);
+    }
+    const context = loadJson(CONTEXT_EXAMPLE);
+    const response = loadJson(REDEMPTION_RESPONSE_EXAMPLE);
+    const ed = generateKeyPairSync("ed25519");
+    const edJwk = publicJwk(ed.publicKey, "ed-keep-001", "EdDSA");
+    const edRegistration = registrationWithKeys([edJwk], ["EdDSA"]);
+    const edAssertion = signedAssertion({ alg: "EdDSA", kid: edJwk.kid }, context, ed.privateKey);
+    assert.equal(
+      redemptionResponseMatchesContext({ ...response, assertion: edAssertion }, context, edRegistration),
+      true,
+    );
+    const ec = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+    const ecJwk = publicJwk(ec.publicKey, "ec-keep-001", "ES256");
+    const ecRegistration = registrationWithKeys([ecJwk], ["ES256"]);
+    const ecAssertion = signedAssertion({ alg: "ES256", kid: ecJwk.kid }, context, ec.privateKey);
+    assert.equal(
+      redemptionResponseMatchesContext({ ...response, assertion: ecAssertion }, context, ecRegistration),
+      true,
+    );
+  });
+
+  await t.test("512, 1024, and 2047 bit RSA keys are rejected before trust or consumption", () => {
+    for (const bits of [512, 1024, 2047]) {
+      const key = rsaMaterial(bits, "RS256", `rsa-short-${bits}`);
+      const modulus = Buffer.from(key.jwk.n, "base64url");
+      if (bits === 2047) {
+        assert.equal(modulus.length, 256);
+        assert.ok(modulus[0] < 0x80);
+      } else {
+        assert.equal(modulus.length * 8, bits);
+        assert.ok(modulus[0] >= 0x80);
+      }
+      const registration = registrationWithKeys([key.jwk], ["RS256"]);
+      assert.equal(validateRegistration(registration), true, `${bits} schema`);
+      const { response, context } = signedContextResponse(key.jwk, key.privateKey, "RS256");
+      assert.equal(rsaSignatureHolds(response.assertion, key.jwk), true, `${bits} node would verify`);
+      assert.equal(redemptionResponseMatchesContext(response, context, registration), false, bits);
+      assertWeakRegistrationRejected(registration, `${bits} registration`);
+    }
+  });
+
+  await t.test("a leading-zero padded short modulus is not a 2048 bit key", () => {
+    const key = rsaMaterial(1024, "RS256", "rsa-padded-1024");
+    const raw = Buffer.from(key.jwk.n, "base64url");
+    const padded = Buffer.concat([Buffer.alloc(256 - raw.length), raw]);
+    assert.equal(padded.length * 8, 2048);
+    assert.equal(padded[0], 0);
+    const disguised = structuredClone(key.jwk);
+    disguised.n = padded.toString("base64url");
+    const registration = registrationWithKeys([disguised], ["RS256"]);
+    assert.equal(validateRegistration(registration), true);
+    assertWeakRegistrationRejected(registration, "padded modulus");
+  });
+
+  await t.test("an unused weak RSA key rejects the whole registration", () => {
+    const strong = rsaMaterial(2048, "RS256", "rsa-strong-2048");
+    const weak = rsaMaterial(512, "RS256", "rsa-unused-512");
+    const registration = registrationWithKeys([strong.jwk, weak.jwk], ["RS256"]);
+    assert.equal(validateRegistration(registration), true);
+    const { response, context } = signedContextResponse(strong.jwk, strong.privateKey, "RS256");
+    assert.equal(rsaSignatureHolds(response.assertion, strong.jwk), true);
+    assert.equal(redemptionResponseMatchesContext(response, context, registration), false);
+    assertWeakRegistrationRejected(registration, "unused weak key");
+  });
+
+  await t.test("non-canonical modulus, weak exponent, ambiguous kid, and tampered alg fail closed", () => {
+    const strong = rsaMaterial(2048, "RS256", "rsa-canonical-2048");
+    const alias = unusedBitAlias(strong.jwk.n);
+    assert.notEqual(alias, null);
+    assert.equal(Buffer.from(alias, "base64url").equals(Buffer.from(strong.jwk.n, "base64url")), true);
+    const nonCanonical = structuredClone(strong.jwk);
+    nonCanonical.n = alias;
+    const nonCanonicalRegistration = registrationWithKeys([nonCanonical], ["RS256"]);
+    assert.equal(validateRegistration(nonCanonicalRegistration), true);
+    assertWeakRegistrationRejected(nonCanonicalRegistration, "non-canonical modulus");
+    for (const exponent of ["AQ", "Ag"]) {
+      const weakExponent = structuredClone(strong.jwk);
+      weakExponent.kid = `rsa-exponent-${exponent}`;
+      weakExponent.e = exponent;
+      const registration = registrationWithKeys([weakExponent], ["RS256"]);
+      assert.equal(validateRegistration(registration), true, exponent);
+      assertWeakRegistrationRejected(registration, `exponent ${exponent}`);
+    }
+    const other = rsaMaterial(2048, "RS256", "rsa-canonical-2048");
+    const ambiguous = registrationWithKeys([strong.jwk, other.jwk], ["RS256"]);
+    const signed = signedContextResponse(strong.jwk, strong.privateKey, "RS256");
+    assert.equal(rsaSignatureHolds(signed.response.assertion, strong.jwk), true);
+    assert.equal(redemptionResponseMatchesContext(signed.response, signed.context, ambiguous), false);
+    const tampered = signedContextResponse(strong.jwk, strong.privateKey, "RS256");
+    tampered.response.assertion = signedAssertion(
+      { alg: "RS384", kid: strong.jwk.kid },
+      tampered.context,
+      strong.privateKey,
+    );
+    assert.equal(
+      redemptionResponseMatchesContext(tampered.response, tampered.context, registrationWithKeys([strong.jwk], ["RS256"])),
+      false,
+    );
+  });
+
+  await t.test("disabled and revoked weak keys keep status precedence", () => {
+    for (const [status, code] of [["disabled", "CLIENT_DISABLED"], ["revoked", "CLIENT_REVOKED"]]) {
+      const key = rsaMaterial(512, "RS256", `rsa-${status}`);
+      const registration = registrationWithKeys([key.jwk], ["RS256"]);
+      registration.status = status;
+      const redeemed = redemptionOf({ registration });
+      assertClosedRejection(redeemed, code, status);
+      const authorized = assessPublishedAuthorization({ registration });
+      assert.equal(authorized.code, code, status);
+      assert.equal(authorized.authorizationAccepted, false, status);
+      assert.equal(authorized.codeIssued, false, status);
+      assertNoSession(authorized);
+    }
+  });
+});
+
+test("source-session-handoff binds authorization purpose before issuing a code", async (t) => {
+  const validateRequest = validatorFor(AUTHZ_REQUEST_SCHEMA);
+
+  function deny(overrides, code, label) {
+    const result = assessPublishedAuthorization(overrides);
+    assert.equal(result.authorizationAccepted, false, label);
+    assert.equal(result.codeIssued, false, label);
+    assert.equal(result.code, code, label);
+    assert.equal(result.contextAccepted, false, label);
+    assertNoSession(result);
+    return result;
+  }
+
+  await t.test("the published authorization request is accepted and does not issue a code", () => {
+    const result = assessPublishedAuthorization();
+    assert.equal(result.failure, null);
+    assert.equal(result.authorizationAccepted, true);
+    assert.equal(result.codeIssued, false);
+    assert.equal(result.contextAccepted, false);
+    assertNoSession(result);
+  });
+
+  await t.test("request purpose mismatch is denied while the destination stays valid", () => {
+    const request = loadJson(AUTHZ_REQUEST_EXAMPLE);
+    request.purpose = "other-purpose";
+    assert.equal(validateRequest(request), true);
+    assert.equal(destinationUriValid(request.destination_uri), true);
+    assert.equal(authorizationRequestDestinationAccepted(request), true);
+    deny({ request }, "PURPOSE_MISMATCH", "request purpose");
+  });
+
+  await t.test("registration purpose mismatch is denied independently", () => {
+    const registration = publishedRegistration();
+    registration.purpose = "other-purpose";
+    deny({ registration }, "PURPOSE_MISMATCH", "registration purpose");
+  });
+
+  await t.test("initiation purpose mismatch is denied independently", () => {
+    const initiation = loadJson(INITIATION_EXAMPLE);
+    initiation.purpose = "other-purpose";
+    deny({ initiation }, "PURPOSE_MISMATCH", "initiation purpose");
+  });
+
+  await t.test("handoff transaction client receiver destination state and pkce mismatches are denied", () => {
+    const request = loadJson(AUTHZ_REQUEST_EXAMPLE);
+    const cases = [
+      ["handoff_ref", "handoff-placeholder-002", "HANDOFF_MISMATCH"],
+      ["transaction_ref", "transaction-placeholder-002", "TRANSACTION_MISMATCH"],
+      ["correlation_ref", "correlation-placeholder-002", "CORRELATION_MISMATCH"],
+      ["client_ref", "client-placeholder-002", "UNKNOWN_CLIENT"],
+      ["receiver_ref", "receiver-placeholder-002", "UNKNOWN_CLIENT"],
+      ["destination_uri", "https://receiver.example/a//callback", "DESTINATION_MISMATCH"],
+      ["state", "b".repeat(22), "MALFORMED_REQUEST"],
+      ["code_challenge", pkceChallengeFor("a".repeat(43)), "MALFORMED_REQUEST"],
+      ["code_challenge_method", "plain", "INVALID_PKCE_METHOD"],
+    ];
+    for (const [field, value, code] of cases) {
+      const candidate = structuredClone(request);
+      candidate[field] = value;
+      deny({ request: candidate }, code, field);
+    }
+    const initiation = loadJson(INITIATION_EXAMPLE);
+    initiation.issuer = "issuer-placeholder-002";
+    deny({ initiation }, "UNKNOWN_CLIENT", "issuer");
+    const omitted = assessAuthorizationRequest({
+      request,
+      initiation: loadJson(INITIATION_EXAMPLE),
+      registration: publishedRegistration(),
+      expectedState: request.state,
+      expectedCodeChallenge: request.code_challenge,
+    });
+    assert.equal(omitted.code, "MALFORMED_REQUEST");
+    assert.equal(omitted.codeIssued, false);
   });
 });
