@@ -2926,3 +2926,319 @@ test("an s256 challenge is the canonical encoding of exactly 32 bytes", () => {
   assert.equal(redeemed.codeConsumed, false);
   assertNoSession(redeemed);
 });
+
+const PUBLISHED_DESTINATION = "https://receiver.example/session-handoff/callback";
+const PARSER_INVALID_DESTINATION = "https://[:::1]/callback";
+const SECOND_VALID_DESTINATION = "https://receiver.example/a//callback";
+
+function registrationWithDestinations(uris, status = "enabled") {
+  const registration = publishedRegistration();
+  registration.status = status;
+  registration.destination_uris = uris;
+  return registration;
+}
+
+function publishedSignatureHolds(response, registration) {
+  const inspected = inspectCompactJws(response.assertion);
+  if (inspected === null) {
+    return false;
+  }
+  const key = createPublicKey({ key: registration.jwks.keys[0], format: "jwk" });
+  return verify(null, inspected.signingInput, key, inspected.signature);
+}
+
+function assertClosedRejection(result, code, label) {
+  assert.equal(result.code, code, label);
+  assert.equal(result.failure, "unverified", label);
+  assert.equal(result.retryable, false, label);
+  assert.equal(result.contextAccepted, false, label);
+  assert.equal(result.redirectPermitted, false, label);
+  assert.equal(result.reconciled, false, label);
+  assert.equal(result.codeConsumed, false, label);
+  assertNoSession(result);
+}
+
+function assertRegistrationTrustRejected(registration, code, label) {
+  const response = loadJson(REDEMPTION_RESPONSE_EXAMPLE);
+  const context = loadJson(CONTEXT_EXAMPLE);
+  const request = publishedRedemptionRequest();
+  const record = codeRecordFor(request);
+  const registrationBefore = structuredClone(registration);
+  const recordBefore = structuredClone(record);
+  const responseBefore = structuredClone(response);
+  const contextBefore = structuredClone(context);
+  assert.equal(publishedSignatureHolds(response, registration), true, `${label} signature`);
+  assert.equal(
+    registrationPermitsRedirect(registration, registration.client_ref, PUBLISHED_DESTINATION),
+    false,
+    `${label} redirect`,
+  );
+  assert.equal(
+    redemptionResponseMatchesContext(response, context, registration),
+    false,
+    `${label} signed context`,
+  );
+  const redeemed = redemptionOf({ registration, request, codeRecord: record });
+  assertClosedRejection(redeemed, code, `${label} redemption`);
+  assert.deepEqual(registration, registrationBefore, `${label} registration unchanged`);
+  assert.deepEqual(record, recordBefore, `${label} code record unchanged`);
+  assert.equal(record.consumed, false, `${label} code unconsumed`);
+  assert.deepEqual(response, responseBefore, `${label} response unchanged`);
+  assert.deepEqual(context, contextBefore, `${label} context unchanged`);
+}
+
+test("source-session-handoff validates every registered destination before trusting a registration", async (t) => {
+  const validateRegistration = validatorFor(REGISTRATION_SCHEMA);
+  const response = loadJson(REDEMPTION_RESPONSE_EXAMPLE);
+  const context = loadJson(CONTEXT_EXAMPLE);
+
+  await t.test("multiple valid destinations remain eligible on every trust path", () => {
+    const destinations = [
+      PUBLISHED_DESTINATION,
+      "https://192.0.2.10/callback",
+      "https://[2001:db8::1]/callback",
+      "https://[2001:db8::192.0.2.1]/callback",
+      "https://3receiver.example/callback",
+      "https://receiver.example:8443/callback",
+      SECOND_VALID_DESTINATION,
+    ];
+    const registration = registrationWithDestinations(destinations);
+    const registrationBefore = structuredClone(registration);
+    assert.equal(validateRegistration(registration), true);
+    for (const uri of destinations) {
+      assert.equal(destinationUriValid(uri), true, uri);
+      assert.equal(
+        registrationPermitsRedirect(registration, registration.client_ref, uri),
+        true,
+        uri,
+      );
+    }
+    assert.equal(
+      registrationPermitsRedirect(
+        registration,
+        registration.client_ref,
+        "https://receiver.example:443/session-handoff/callback",
+      ),
+      false,
+    );
+    assert.equal(redemptionResponseMatchesContext(response, context, registration), true);
+    const redeemed = redemptionOf({ registration });
+    assert.equal(redeemed.failure, null);
+    assert.equal(redeemed.codeConsumed, true);
+    assert.equal(redeemed.contextAccepted, false);
+    assertNoSession(redeemed);
+    for (const uri of destinations.slice(1)) {
+      const request = publishedRedemptionRequest();
+      request.destination_uri = uri;
+      const record = codeRecordFor(request);
+      const recordBefore = structuredClone(record);
+      const result = redemptionOf({ request, registration, codeRecord: record });
+      assert.equal(result.failure, null, uri);
+      assert.equal(result.codeConsumed, true, uri);
+      assert.deepEqual(record, recordBefore, uri);
+    }
+    assert.deepEqual(registration, registrationBefore);
+  });
+
+  const positions = [
+    ["invalid destination first and requested destination last", [PARSER_INVALID_DESTINATION, SECOND_VALID_DESTINATION, PUBLISHED_DESTINATION]],
+    ["invalid destination middle and requested destination first", [PUBLISHED_DESTINATION, PARSER_INVALID_DESTINATION, SECOND_VALID_DESTINATION]],
+    ["invalid destination last and requested destination middle", [SECOND_VALID_DESTINATION, PUBLISHED_DESTINATION, PARSER_INVALID_DESTINATION]],
+    ["invalid destination first and requested destination middle", [PARSER_INVALID_DESTINATION, PUBLISHED_DESTINATION, SECOND_VALID_DESTINATION]],
+    ["invalid destination middle and requested destination last", [SECOND_VALID_DESTINATION, PARSER_INVALID_DESTINATION, PUBLISHED_DESTINATION]],
+    ["invalid destination last and requested destination first", [PUBLISHED_DESTINATION, SECOND_VALID_DESTINATION, PARSER_INVALID_DESTINATION]],
+  ];
+  for (const [name, uris] of positions) {
+    await t.test(name, () => {
+      const registration = registrationWithDestinations(uris);
+      assert.equal(validateRegistration(registration), true, name);
+      assert.equal(destinationUriValid(PARSER_INVALID_DESTINATION), false);
+      assert.equal(destinationUriValid(PUBLISHED_DESTINATION), true);
+      assert.deepEqual(registration.destination_uris, uris);
+      assertRegistrationTrustRejected(registration, "UNKNOWN_CLIENT", name);
+      assert.deepEqual(registration.destination_uris, uris, name);
+    });
+  }
+
+  await t.test("schema-valid parser-invalid destinations reject the whole registration", () => {
+    const invalidDestinations = [
+      PARSER_INVALID_DESTINATION,
+      "https://[192.0.2.1::1]/callback",
+      "https://receiver.example/foo/../callback",
+    ];
+    for (const uri of invalidDestinations) {
+      assert.equal(destinationUriValid(uri), false, uri);
+      const only = registrationWithDestinations([uri]);
+      assert.equal(validateRegistration(only), true, uri);
+      assertRegistrationTrustRejected(only, "UNKNOWN_CLIENT", `only ${uri}`);
+      const unused = registrationWithDestinations([PUBLISHED_DESTINATION, uri]);
+      assert.equal(validateRegistration(unused), true, uri);
+      assertRegistrationTrustRejected(unused, "UNKNOWN_CLIENT", `unused ${uri}`);
+    }
+  });
+
+  await t.test("structural allow-list failures fail closed", () => {
+    const missing = publishedRegistration();
+    delete missing.destination_uris;
+    const sparse = registrationWithDestinations([PUBLISHED_DESTINATION]);
+    sparse.destination_uris.length = 2;
+    const cases = [
+      ["missing", missing],
+      ["null", registrationWithDestinations(null)],
+      ["non-array", registrationWithDestinations(PUBLISHED_DESTINATION)],
+      ["empty", registrationWithDestinations([])],
+      ["duplicate", registrationWithDestinations([PUBLISHED_DESTINATION, PUBLISHED_DESTINATION])],
+      ["non-string", registrationWithDestinations([PUBLISHED_DESTINATION, 1])],
+      ["sparse", sparse],
+    ];
+    for (const [name, registration] of cases) {
+      assert.equal(validateRegistration(registration), false, name);
+      let redirected = null;
+      assert.doesNotThrow(() => {
+        redirected = registrationPermitsRedirect(
+          registration,
+          registration.client_ref,
+          PUBLISHED_DESTINATION,
+        );
+      }, name);
+      assert.equal(redirected, false, name);
+      assert.doesNotThrow(() => {
+        assert.equal(redemptionResponseMatchesContext(response, context, registration), false, name);
+      }, name);
+      const request = publishedRedemptionRequest();
+      const record = codeRecordFor(request);
+      const recordBefore = structuredClone(record);
+      let redeemed = null;
+      assert.doesNotThrow(() => {
+        redeemed = redemptionOf({ registration, request, codeRecord: record });
+      }, name);
+      assertClosedRejection(redeemed, "UNKNOWN_CLIENT", name);
+      assert.deepEqual(record, recordBefore, name);
+      if (name === "sparse") {
+        assert.equal(registration.destination_uris.length, 2);
+        assert.equal(Object.hasOwn(registration.destination_uris, 1), false);
+        assert.equal(registration.destination_uris[0], PUBLISHED_DESTINATION);
+      }
+    }
+  });
+
+  await t.test("invalid authorization endpoint with valid destinations", () => {
+    const registration = publishedRegistration();
+    registration.authorization_endpoint = PARSER_INVALID_DESTINATION;
+    assert.equal(validateRegistration(registration), true);
+    assert.equal(destinationUriValid(registration.destination_uris[0]), true);
+    assert.equal(registrationEndpointsAccepted(registration), false);
+    assertRegistrationTrustRejected(registration, "UNKNOWN_CLIENT", "authorization endpoint");
+  });
+
+  await t.test("invalid token endpoint with valid destinations", () => {
+    const registration = publishedRegistration();
+    registration.token_endpoint = PARSER_INVALID_DESTINATION;
+    assert.equal(validateRegistration(registration), true);
+    assert.equal(destinationUriValid(registration.destination_uris[0]), true);
+    assert.equal(registrationEndpointsAccepted(registration), false);
+    assertRegistrationTrustRejected(registration, "UNKNOWN_CLIENT", "token endpoint");
+  });
+
+  await t.test("omitted valid destination remains DESTINATION_MISMATCH", () => {
+    const registration = registrationWithDestinations([SECOND_VALID_DESTINATION]);
+    const registrationBefore = structuredClone(registration);
+    const request = publishedRedemptionRequest();
+    const record = codeRecordFor(request);
+    const recordBefore = structuredClone(record);
+    assert.equal(validateRegistration(registration), true);
+    assert.equal(destinationUriValid(SECOND_VALID_DESTINATION), true);
+    assert.equal(destinationUriValid(PUBLISHED_DESTINATION), true);
+    assert.equal(
+      registrationPermitsRedirect(registration, registration.client_ref, SECOND_VALID_DESTINATION),
+      true,
+    );
+    assert.equal(
+      registrationPermitsRedirect(registration, registration.client_ref, PUBLISHED_DESTINATION),
+      false,
+    );
+    assert.equal(publishedSignatureHolds(response, registration), true);
+    assert.equal(redemptionResponseMatchesContext(response, context, registration), false);
+    const redeemed = redemptionOf({ registration, request, codeRecord: record });
+    assertClosedRejection(redeemed, "DESTINATION_MISMATCH", "omitted destination");
+    assert.deepEqual(registration, registrationBefore);
+    assert.deepEqual(record, recordBefore);
+    assert.equal(record.consumed, false);
+  });
+
+  await t.test("disabled malformed registration preserves CLIENT_DISABLED", () => {
+    const registration = registrationWithDestinations(
+      [PUBLISHED_DESTINATION, PARSER_INVALID_DESTINATION],
+      "disabled",
+    );
+    assert.equal(validateRegistration(registration), true);
+    assertRegistrationTrustRejected(registration, "CLIENT_DISABLED", "disabled");
+    const replayed = redemptionOf({ registration, record: { consumed: true } });
+    assertClosedRejection(replayed, "CLIENT_DISABLED", "disabled consumed record");
+  });
+
+  await t.test("revoked malformed registration preserves CLIENT_REVOKED", () => {
+    const registration = registrationWithDestinations(
+      [PUBLISHED_DESTINATION, PARSER_INVALID_DESTINATION],
+      "revoked",
+    );
+    assert.equal(validateRegistration(registration), true);
+    assertRegistrationTrustRejected(registration, "CLIENT_REVOKED", "revoked");
+    const replayed = redemptionOf({ registration, record: { consumed: true } });
+    assertClosedRejection(replayed, "CLIENT_REVOKED", "revoked consumed record");
+  });
+
+  await t.test("historical negative destinations fail closed", () => {
+    const negatives = [
+      "https://0x7f.0.0.1/callback",
+      "https://0xdead.example/callback",
+      "https://receiver.example./callback",
+      "https://user:pw@receiver.example/callback",
+      "https://receiver.example/callback?x=1",
+      "https://receiver.example/callback#fragment",
+      "https://*.receiver.example/callback",
+      "https://receiver.example/callback ",
+      "https://receiver.example/callback\u0000",
+      "https://receiver.example/a\\b",
+      "https://receiver.example:/callback",
+      "https://receiver.example:65536/callback",
+    ];
+    for (const uri of negatives) {
+      assert.equal(destinationUriValid(uri), false, uri);
+      const registration = registrationWithDestinations([PUBLISHED_DESTINATION, uri]);
+      assert.equal(validateRegistration(registration), false, uri);
+      assertRegistrationTrustRejected(registration, "UNKNOWN_CLIENT", uri);
+    }
+  });
+
+  await t.test("in-place addition of an unused invalid URI rejects the same registration", () => {
+    const registration = publishedRegistration();
+    const record = codeRecordFor(publishedRedemptionRequest());
+    assert.equal(validateRegistration(registration), true);
+    assert.equal(registrationPermitsRedirect(registration, registration.client_ref, PUBLISHED_DESTINATION), true);
+    assert.equal(redemptionResponseMatchesContext(response, context, registration), true);
+    const accepted = redemptionOf({ registration, codeRecord: record });
+    assert.equal(accepted.failure, null);
+    assert.equal(accepted.codeConsumed, true);
+    assert.equal(record.consumed, false);
+    registration.destination_uris.push(PARSER_INVALID_DESTINATION);
+    const registrationBefore = structuredClone(registration);
+    const rejectedRecord = codeRecordFor(publishedRedemptionRequest());
+    const rejectedRecordBefore = structuredClone(rejectedRecord);
+    assert.equal(validateRegistration(registration), true);
+    assert.equal(destinationUriValid(registration.destination_uris[0]), true);
+    assert.equal(destinationUriValid(registration.destination_uris[1]), false);
+    assert.equal(publishedSignatureHolds(response, registration), true);
+    assert.equal(
+      registrationPermitsRedirect(registration, registration.client_ref, PUBLISHED_DESTINATION),
+      false,
+    );
+    assert.equal(redemptionResponseMatchesContext(response, context, registration), false);
+    const rejected = redemptionOf({ registration, codeRecord: rejectedRecord });
+    assertClosedRejection(rejected, "UNKNOWN_CLIENT", "mutated registration");
+    assert.deepEqual(registration, registrationBefore);
+    assert.deepEqual(registration.destination_uris, [PUBLISHED_DESTINATION, PARSER_INVALID_DESTINATION]);
+    assert.deepEqual(rejectedRecord, rejectedRecordBefore);
+    assert.equal(rejectedRecord.consumed, false);
+  });
+});
