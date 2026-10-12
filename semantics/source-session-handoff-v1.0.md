@@ -175,7 +175,7 @@ IPv6 syntax is the parser's syntax. This contract does not publish a partial IPv
 
 After syntactic validation, registered destination matching is byte-for-byte equality of the original strings. No canonicalisation is applied before that comparison. Host case, an explicit port, and IPv6 spelling are significant.
 
-The same syntax applies to `authorization_endpoint` and `token_endpoint`. Both MUST pass this semantic validation. The structural schema pattern is only a screen, so a bracketed host such as `https://[:::1]/callback` is not an accepted endpoint.
+The same syntax applies to `authorization_endpoint`, `token_endpoint`, and every `destination_uris` entry. Each value MUST pass this semantic validation before a selected registration is accepted, including a registered destination the current request does not use. The structural schema pattern is only a screen, so a bracketed host such as `https://[:::1]/callback` is not an accepted endpoint or registered destination. One failing entry rejects the registration as a whole. The valid entries are not filtered out, and validating only the matched entry is not acceptance.
 
 ## 9. Browser persistence
 
@@ -199,7 +199,7 @@ Required public fields: `registration_version`, `issuer`, `client_ref`, `receive
 
 The permitted algorithm set is `RS256`, `RS384`, `RS512`, `ES256`, `ES384`, `ES512`, and `EdDSA`. Registration MUST NOT allow any other algorithm.
 
-The complete registration object MUST satisfy the published closed registration schema before any conformance path trusts it. An unknown field, including `client_secret`, is not a usable registration. In redemption that failure is `UNKNOWN_CLIENT` and does not consume the code. Status classification for `disabled` and `revoked` remains in force. Registration contains public verification material only. It MUST NOT contain receiver role, receiver membership, grant, permission, receiver session authority, private JWK material, or a source or client secret. Caller-supplied key URLs are not trust. `jku`, `x5u`, and embedded private parameters are rejected. Private JWK members include `d`, `p`, `q`, `dp`, `dq`, `qi`, `oth`, and `k`. A key that carries `oth` is not a public verification key, even when a signature over the public `n` and `e` would otherwise verify.
+The complete registration object MUST satisfy the published closed registration schema before any conformance path trusts it. An unknown field, including `client_secret`, is not a usable registration. In redemption that failure is `UNKNOWN_CLIENT` and does not consume the code. Redirect authorization, signed-context binding, and redemption share that check with semantic validation of `authorization_endpoint`, `token_endpoint`, and every `destination_uris` entry. `destination_uris` MUST be a nonempty array, and each value MUST pass section 8, including entries unused by the current request. The schema already requires each registered value to pass destination validation. Failure of any entry rejects the registration as a whole. An enabled registration that fails this complete check is `UNKNOWN_CLIENT` and does not consume the code. A registration that passes and simply omits the requested destination is `DESTINATION_MISMATCH`. Status classification for `disabled` and `revoked` remains in force and precedes that complete check. Registration contains public verification material only. It MUST NOT contain receiver role, receiver membership, grant, permission, receiver session authority, private JWK material, or a source or client secret. Caller-supplied key URLs are not trust. `jku`, `x5u`, and embedded private parameters are rejected. Private JWK members include `d`, `p`, `q`, `dp`, `dq`, `qi`, `oth`, and `k`. A key that carries `oth` is not a public verification key, even when a signature over the public `n` and `e` would otherwise verify.
 
 `status` `disabled` is machine code `CLIENT_DISABLED`. `revoked` is `CLIENT_REVOKED`. A client that is not the registered client is `UNKNOWN_CLIENT`. Each of those results forbids redirect to the supplied destination.
 
@@ -263,6 +263,8 @@ Redemption of an authorization code applies the first matching machine code:
 10. `PKCE_MISMATCH`
 11. `PURPOSE_MISMATCH`, `HANDOFF_MISMATCH`, `TRANSACTION_MISMATCH`, or `CORRELATION_MISMATCH`
 12. `SOURCE_ROLE_CONTEXT_INVALID` when the code record has no distinct bound source session and source context
+
+Step 5 classifies `disabled` as `CLIENT_DISABLED` and `revoked` as `CLIENT_REVOKED` before endpoint and destination validation. An enabled registration is `UNKNOWN_CLIENT` when the closed schema fails or when `authorization_endpoint`, `token_endpoint`, or any `destination_uris` entry fails section 8, including an entry the request does not select. `DESTINATION_MISMATCH` applies only after that complete registration check passes and the requested destination is absent.
 
 Only a record that passes every atomic check is consumed. Consumption is single-use.
 

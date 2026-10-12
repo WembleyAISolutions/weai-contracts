@@ -757,6 +757,24 @@ export function registrationEndpointsAccepted(registration) {
     && destinationUriValid(registration.token_endpoint);
 }
 
+function everyRegisteredDestinationValid(uris) {
+  if (!Array.isArray(uris) || uris.length === 0) {
+    return false;
+  }
+  for (let index = 0; index < uris.length; index += 1) {
+    if (!Object.hasOwn(uris, index) || !destinationUriValid(uris[index])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function completeRegistrationAccepted(registration) {
+  return registrationSchemaHolds(registration)
+    && registrationEndpointsAccepted(registration)
+    && everyRegisteredDestinationValid(registration.destination_uris);
+}
+
 function browserStateWellFormed(value) {
   return typeof value === "string" && /^[A-Za-z0-9\-._~]{22,128}$/.test(value);
 }
@@ -790,13 +808,10 @@ export function registrationPermitsRedirect(registration, clientRef, destination
   if (registration.status !== "enabled" || registration.client_ref !== clientRef) {
     return false;
   }
-  if (!registrationSchemaHolds(registration) || !registrationEndpointsAccepted(registration)) {
+  if (!completeRegistrationAccepted(registration) || !destinationUriValid(destination)) {
     return false;
   }
-  if (!destinationUriValid(destination) || !Array.isArray(registration.destination_uris)) {
-    return false;
-  }
-  return registration.destination_uris.some((item) => item === destination);
+  return registration.destination_uris.includes(destination);
 }
 
 function canonicalBase64UrlBytes(segment) {
@@ -1019,8 +1034,7 @@ function registrationBindsContext(registration, context) {
     return false;
   }
   return registration.status === "enabled"
-    && registrationSchemaHolds(registration)
-    && registrationEndpointsAccepted(registration)
+    && completeRegistrationAccepted(registration)
     && context.contract_family === FAMILY
     && context.contract_version === VERSION
     && context.profile === PROFILE
@@ -1033,7 +1047,6 @@ function registrationBindsContext(registration, context) {
     && registration.allowed_contract_versions.includes(context.contract_version)
     && Array.isArray(registration.allowed_profiles)
     && registration.allowed_profiles.includes(context.profile)
-    && Array.isArray(registration.destination_uris)
     && registration.destination_uris.includes(context.destination_uri);
 }
 
@@ -1131,10 +1144,10 @@ export function assessRedemption(input) {
   if (registration.status !== "enabled") {
     return machineResult("UNKNOWN_CLIENT");
   }
-  if (!registrationSchemaHolds(registration) || !registrationEndpointsAccepted(registration)) {
+  if (!completeRegistrationAccepted(registration)) {
     return machineResult("UNKNOWN_CLIENT");
   }
-  if (!Array.isArray(registration.destination_uris) || !registration.destination_uris.includes(request.destination_uri)) {
+  if (!registration.destination_uris.includes(request.destination_uri)) {
     return machineResult("DESTINATION_MISMATCH");
   }
   const record = input.codeRecord;
