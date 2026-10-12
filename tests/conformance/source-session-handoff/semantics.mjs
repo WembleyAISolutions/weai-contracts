@@ -6,6 +6,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const CONTEXT_SCHEMA = "contracts/source-session-handoff/v1.0/authenticated-context.schema.json";
+const AUTHZ_REQUEST_SCHEMA = "contracts/source-session-handoff/v1.0/authorization-request.schema.json";
 const REGISTRATION_SCHEMA = "contracts/source-session-handoff/v1.0/trusted-source-registration.schema.json";
 
 const FAMILY = "source-session-handoff";
@@ -358,6 +359,7 @@ export function contextSemanticsHold(context) {
 }
 
 let authenticatedContextSchemaValid = null;
+let authorizationRequestSchemaValid = null;
 let registrationSchemaValid = null;
 
 function handoffAjv() {
@@ -384,6 +386,13 @@ function registrationSchemaHolds(registration) {
     registrationSchemaValid = handoffAjv().compile(loadJson(REGISTRATION_SCHEMA));
   }
   return registrationSchemaValid(registration) === true;
+}
+
+function authorizationRequestSchemaHolds(request) {
+  if (authorizationRequestSchemaValid === null) {
+    authorizationRequestSchemaValid = handoffAjv().compile(loadJson(AUTHZ_REQUEST_SCHEMA));
+  }
+  return authorizationRequestSchemaValid(request) === true;
 }
 
 function authenticatedContextSemanticsHold(payload) {
@@ -749,6 +758,139 @@ export function authorizationRequestDestinationAccepted(request) {
   return destinationUriValid(request.destination_uri);
 }
 
+function authorizationPurposeBound(request, initiation, registration) {
+  return typeof request.purpose === "string"
+    && request.purpose === initiation.purpose
+    && request.purpose === registration.purpose;
+}
+
+function authorizationDenial(code) {
+  return {
+    ...machineResult(code),
+    authorizationAccepted: false,
+    codeIssued: false,
+  };
+}
+
+function authorizationAcceptance() {
+  return {
+    failure: null,
+    code: null,
+    retryable: false,
+    authorizationAccepted: true,
+    codeIssued: false,
+    contextAccepted: false,
+    grantsReceiverAccess: false,
+    mintsReceiverSession: false,
+    mintsAdditionalReceiverSession: false,
+    synthesizedUnscopedRedirect: false,
+    synthesizedEmptyContext: false,
+    reconciled: false,
+    redirectPermitted: false,
+    codeConsumed: false,
+  };
+}
+
+export function assessAuthorizationRequest(input) {
+  if (input.issuerUnavailable === true) {
+    return authorizationDenial("ISSUER_UNAVAILABLE");
+  }
+  if (input.dependencyAvailable === false) {
+    return authorizationDenial("DEPENDENCY_UNAVAILABLE");
+  }
+  const request = input.request;
+  if (request === null || typeof request !== "object" || Array.isArray(request)) {
+    return authorizationDenial("MALFORMED_REQUEST");
+  }
+  if (request.contract_family !== FAMILY) {
+    return authorizationDenial("UNSUPPORTED_CONTRACT_VERSION");
+  }
+  if (request.contract_version !== VERSION) {
+    return authorizationDenial("UNSUPPORTED_CONTRACT_VERSION");
+  }
+  if (request.profile !== PROFILE) {
+    return authorizationDenial("UNSUPPORTED_PROFILE");
+  }
+  if (request.code_challenge_method !== "S256") {
+    return authorizationDenial("INVALID_PKCE_METHOD");
+  }
+  if (input.schemaValidRequest !== true || !authorizationRequestSchemaHolds(request)) {
+    return authorizationDenial("MALFORMED_REQUEST");
+  }
+  if (!destinationUriValid(request.destination_uri) || !pkceChallengeCanonical(request.code_challenge)) {
+    return authorizationDenial("MALFORMED_REQUEST");
+  }
+  if (!browserStateWellFormed(request.state)) {
+    return authorizationDenial("MALFORMED_REQUEST");
+  }
+  const initiation = input.initiation;
+  if (
+    initiation === null
+    || typeof initiation !== "object"
+    || Array.isArray(initiation)
+    || !initiationSemanticsHold(initiation)
+  ) {
+    return authorizationDenial("MALFORMED_REQUEST");
+  }
+  const registration = input.registration;
+  if (
+    registration === null
+    || typeof registration !== "object"
+    || Array.isArray(registration)
+    || registration.client_ref !== request.client_ref
+  ) {
+    return authorizationDenial("UNKNOWN_CLIENT");
+  }
+  if (registration.status === "disabled") {
+    return authorizationDenial("CLIENT_DISABLED");
+  }
+  if (registration.status === "revoked") {
+    return authorizationDenial("CLIENT_REVOKED");
+  }
+  if (registration.status !== "enabled") {
+    return authorizationDenial("UNKNOWN_CLIENT");
+  }
+  if (!completeRegistrationAccepted(registration)) {
+    return authorizationDenial("UNKNOWN_CLIENT");
+  }
+  if (
+    request.destination_uri !== initiation.destination_uri
+    || !registration.destination_uris.includes(request.destination_uri)
+  ) {
+    return authorizationDenial("DESTINATION_MISMATCH");
+  }
+  if (!authorizationPurposeBound(request, initiation, registration)) {
+    return authorizationDenial("PURPOSE_MISMATCH");
+  }
+  if (
+    request.client_ref !== initiation.client_ref
+    || request.receiver_ref !== initiation.receiver_ref
+    || request.receiver_ref !== registration.receiver_ref
+    || registration.issuer !== initiation.issuer
+  ) {
+    return authorizationDenial("UNKNOWN_CLIENT");
+  }
+  if (request.handoff_ref !== initiation.handoff_ref) {
+    return authorizationDenial("HANDOFF_MISMATCH");
+  }
+  if (request.transaction_ref !== initiation.transaction_ref) {
+    return authorizationDenial("TRANSACTION_MISMATCH");
+  }
+  if (request.correlation_ref !== initiation.correlation_ref) {
+    return authorizationDenial("CORRELATION_MISMATCH");
+  }
+  if (!browserStateWellFormed(input.expectedState) || request.state !== input.expectedState) {
+    return authorizationDenial("MALFORMED_REQUEST");
+  }
+  if (
+    !pkceChallengeCanonical(input.expectedCodeChallenge)
+    || request.code_challenge !== input.expectedCodeChallenge
+  ) {
+    return authorizationDenial("MALFORMED_REQUEST");
+  }
+  return authorizationAcceptance();
+}
+
 export function registrationEndpointsAccepted(registration) {
   if (registration === null || typeof registration !== "object" || Array.isArray(registration)) {
     return false;
@@ -769,10 +911,67 @@ function everyRegisteredDestinationValid(uris) {
   return true;
 }
 
+function unsignedBitLength(bytes) {
+  let start = 0;
+  while (start < bytes.length && bytes[start] === 0) {
+    start += 1;
+  }
+  if (start === bytes.length) {
+    return 0;
+  }
+  let prefix = bytes[start];
+  let unused = 0;
+  while ((prefix & 0x80) === 0) {
+    prefix = (prefix << 1) & 0xff;
+    unused += 1;
+  }
+  return (bytes.length - start) * 8 - unused;
+}
+
+function rsaExponentAccepted(bytes) {
+  if (bytes.length === 0 || (bytes[bytes.length - 1] & 1) === 0) {
+    return false;
+  }
+  return unsignedBitLength(bytes) >= 2;
+}
+
+function rsaModulusLongEnough(modulus) {
+  return unsignedBitLength(modulus) >= 2048;
+}
+
+function rsaPublicKeysAccepted(registration) {
+  const keys = registration.jwks && registration.jwks.keys;
+  if (!Array.isArray(keys)) {
+    return false;
+  }
+  for (let index = 0; index < keys.length; index += 1) {
+    if (!Object.hasOwn(keys, index)) {
+      return false;
+    }
+    const key = keys[index];
+    if (key === null || typeof key !== "object" || Array.isArray(key)) {
+      return false;
+    }
+    if (key.kty !== "RSA") {
+      continue;
+    }
+    const modulus = canonicalBase64UrlBytes(key.n);
+    const exponent = canonicalBase64UrlBytes(key.e);
+    if (modulus === null || exponent === null || !rsaExponentAccepted(exponent)) {
+      return false;
+    }
+    if (!rsaModulusLongEnough(modulus)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function completeRegistrationAccepted(registration) {
   return registrationSchemaHolds(registration)
     && registrationEndpointsAccepted(registration)
-    && everyRegisteredDestinationValid(registration.destination_uris);
+    && everyRegisteredDestinationValid(registration.destination_uris)
+    && rsaPublicKeysAccepted(registration);
 }
 
 function browserStateWellFormed(value) {
@@ -1052,6 +1251,9 @@ function registrationBindsContext(registration, context) {
 
 export function redemptionResponseMatchesContext(response, context, registration) {
   if (!closedRedemptionResponse(response)) {
+    return false;
+  }
+  if (!completeRegistrationAccepted(registration)) {
     return false;
   }
   const inspected = inspectCompactJws(response.assertion);
