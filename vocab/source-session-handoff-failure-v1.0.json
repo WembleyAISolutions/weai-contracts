@@ -307,6 +307,7 @@
       "retryable": false,
       "safe_browser_behavior": "safe_oauth_error_and_state",
       "phase": [
+        "authorization",
         "redemption",
         "context"
       ]
@@ -317,6 +318,7 @@
       "retryable": false,
       "safe_browser_behavior": "safe_oauth_error_and_state",
       "phase": [
+        "authorization",
         "redemption",
         "context"
       ]
@@ -327,6 +329,7 @@
       "retryable": false,
       "safe_browser_behavior": "safe_oauth_error_and_state",
       "phase": [
+        "authorization",
         "redemption",
         "context"
       ]
