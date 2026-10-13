@@ -7,6 +7,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const CONTEXT_SCHEMA = "contracts/source-session-handoff/v1.0/authenticated-context.schema.json";
 const AUTHZ_REQUEST_SCHEMA = "contracts/source-session-handoff/v1.0/authorization-request.schema.json";
+const INITIATION_SCHEMA = "contracts/source-session-handoff/v1.0/initiation.schema.json";
 const REGISTRATION_SCHEMA = "contracts/source-session-handoff/v1.0/trusted-source-registration.schema.json";
 
 const FAMILY = "source-session-handoff";
@@ -361,6 +362,19 @@ export function contextSemanticsHold(context) {
 let authenticatedContextSchemaValid = null;
 let authorizationRequestSchemaValid = null;
 let registrationSchemaValid = null;
+let initiationSchemaValid = null;
+
+// Keep the basic timestamp/destination predicate separate: the bound-context
+// evaluator classifies scope and lifetime failures using its own precedence.
+function completeInitiationAccepted(initiation) {
+  if (initiationSchemaValid === null) {
+    initiationSchemaValid = handoffAjv().compile(loadJson(INITIATION_SCHEMA));
+  }
+  return initiationSchemaValid(initiation) === true
+    && initiationSemanticsHold(initiation)
+    && !scopeArrayInvalid(initiation.requested_record_scope_refs)
+    && durationWithin(initiation.initiated_at, initiation.expires_at, CODE_WINDOW_SECONDS);
+}
 
 function handoffAjv() {
   const ajv = new Ajv2020({
@@ -828,7 +842,7 @@ export function assessAuthorizationRequest(input) {
     initiation === null
     || typeof initiation !== "object"
     || Array.isArray(initiation)
-    || !initiationSemanticsHold(initiation)
+    || !completeInitiationAccepted(initiation)
   ) {
     return authorizationDenial("MALFORMED_REQUEST");
   }
@@ -939,7 +953,63 @@ function rsaModulusLongEnough(modulus) {
   return unsignedBitLength(modulus) >= 2048;
 }
 
-function rsaPublicKeysAccepted(registration) {
+// Node imports raw Ed25519 bytes without checking that they encode a curve
+// point. Apply RFC 8032 section 5.1.3 decoding before the public-key import.
+const ED25519_P = (1n << 255n) - 19n;
+
+function edMod(value) {
+  return ((value % ED25519_P) + ED25519_P) % ED25519_P;
+}
+
+function edPow(base, exponent) {
+  let result = 1n;
+  let factor = edMod(base);
+  for (let remaining = exponent; remaining > 0n; remaining >>= 1n) {
+    if ((remaining & 1n) !== 0n) result = edMod(result * factor);
+    factor = edMod(factor * factor);
+  }
+  return result;
+}
+
+const ED25519_D = edMod(-121665n * edPow(121666n, ED25519_P - 2n));
+const ED25519_SQRT_MINUS_ONE = edPow(2n, (ED25519_P - 1n) / 4n);
+
+function ed25519PointAccepted(bytes) {
+  if (bytes.length !== 32) return false;
+  let encoded = 0n;
+  for (let i = bytes.length - 1; i >= 0; i -= 1) {
+    encoded = (encoded << 8n) | BigInt(bytes[i]);
+  }
+  const sign = encoded >> 255n;
+  const y = encoded & ((1n << 255n) - 1n);
+  if (y >= ED25519_P) return false;
+  const ySquared = edMod(y * y);
+  const denominator = edMod(ED25519_D * ySquared + 1n);
+  if (denominator === 0n) return false;
+  const xSquared = edMod((ySquared - 1n) * edPow(denominator, ED25519_P - 2n));
+  let x = edPow(xSquared, (ED25519_P + 3n) / 8n);
+  if (edMod(x * x) !== xSquared) x = edMod(x * ED25519_SQRT_MINUS_ONE);
+  if (edMod(x * x) !== xSquared || (x === 0n && sign === 1n)) return false;
+  if ((x & 1n) !== sign) x = ED25519_P - x;
+  // A point killed by the cofactor 8 is not a usable signing public key.
+  // Projective doubling avoids division and keeps this fixed-size check bounded.
+  let point = [x, y, 1n];
+  for (let i = 0; i < 3; i += 1) {
+    const [px, py, pz] = point;
+    const a = edMod(px * px);
+    const b = edMod(py * py);
+    const c = edMod(2n * pz * pz);
+    const d = edMod(-a);
+    const e = edMod((px + py) * (px + py) - a - b);
+    const g = edMod(d + b);
+    const f = edMod(g - c);
+    const h = edMod(d - b);
+    point = [edMod(e * f), edMod(g * h), edMod(f * g)];
+  }
+  return !(point[0] === 0n && edMod(point[1] - point[2]) === 0n);
+}
+
+function registeredPublicKeysAccepted(registration) {
   const keys = registration.jwks && registration.jwks.keys;
   if (!Array.isArray(keys)) {
     return false;
@@ -952,15 +1022,34 @@ function rsaPublicKeysAccepted(registration) {
     if (key === null || typeof key !== "object" || Array.isArray(key)) {
       return false;
     }
-    if (key.kty !== "RSA") {
-      continue;
-    }
-    const modulus = canonicalBase64UrlBytes(key.n);
-    const exponent = canonicalBase64UrlBytes(key.e);
-    if (modulus === null || exponent === null || !rsaExponentAccepted(exponent)) {
+    if (!publicKeyMatchesAlgorithm(key.alg, key)
+      || !registration.algorithms.includes(key.alg)) {
       return false;
     }
-    if (!rsaModulusLongEnough(modulus)) {
+    if (key.kty === "RSA") {
+      const modulus = canonicalBase64UrlBytes(key.n);
+      const exponent = canonicalBase64UrlBytes(key.e);
+      if (modulus === null || exponent === null
+        || modulus[0] === 0 || exponent[0] === 0
+        || !rsaExponentAccepted(exponent) || !rsaModulusLongEnough(modulus)) {
+        return false;
+      }
+    } else {
+      const x = canonicalBase64UrlBytes(key.x);
+      if (x === null) return false;
+      if (key.kty === "EC") {
+        const length = { "P-256": 32, "P-384": 48, "P-521": 66 }[key.crv];
+        const y = canonicalBase64UrlBytes(key.y);
+        if (x.length !== length || y === null || y.length !== length) return false;
+      } else if (!ed25519PointAccepted(x)) {
+        return false;
+      }
+    }
+    try {
+      const imported = createPublicKey({ key, format: "jwk" });
+      const expectedType = { RSA: "rsa", EC: "ec", OKP: "ed25519" }[key.kty];
+      if (imported.asymmetricKeyType !== expectedType) return false;
+    } catch {
       return false;
     }
   }
@@ -971,7 +1060,7 @@ function completeRegistrationAccepted(registration) {
   return registrationSchemaHolds(registration)
     && registrationEndpointsAccepted(registration)
     && everyRegisteredDestinationValid(registration.destination_uris)
-    && rsaPublicKeysAccepted(registration);
+    && registeredPublicKeysAccepted(registration);
 }
 
 function browserStateWellFormed(value) {
