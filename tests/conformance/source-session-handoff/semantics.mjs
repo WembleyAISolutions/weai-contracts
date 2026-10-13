@@ -902,6 +902,13 @@ export function assessAuthorizationRequest(input) {
   ) {
     return authorizationDenial("MALFORMED_REQUEST");
   }
+  if (parseUtc(input.now) === null) {
+    return authorizationDenial("MALFORMED_REQUEST");
+  }
+  if (compareInstants(initiation.initiated_at, input.now) > 0
+    || compareInstants(input.now, initiation.expires_at) >= 0) {
+    return authorizationDenial("CODE_EXPIRED");
+  }
   return authorizationAcceptance();
 }
 
@@ -1031,6 +1038,7 @@ function registeredPublicKeysAccepted(registration) {
       const exponent = canonicalBase64UrlBytes(key.e);
       if (modulus === null || exponent === null
         || modulus[0] === 0 || exponent[0] === 0
+        || (modulus[modulus.length - 1] & 1) === 0
         || !rsaExponentAccepted(exponent) || !rsaModulusLongEnough(modulus)) {
         return false;
       }
