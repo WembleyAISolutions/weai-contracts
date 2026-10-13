@@ -3260,6 +3260,7 @@ function assessPublishedAuthorization(overrides = {}) {
     expectedCodeChallenge: Object.hasOwn(overrides, "expectedCodeChallenge")
       ? overrides.expectedCodeChallenge
       : stored.code_challenge,
+    now: Object.hasOwn(overrides, "now") ? overrides.now : "2026-08-15T00:00:00Z",
     issuerUnavailable: overrides.issuerUnavailable ?? false,
     dependencyAvailable: overrides.dependencyAvailable ?? true,
   });
@@ -3705,4 +3706,88 @@ test("source-session-handoff RSA unsigned integers must be minimally encoded", a
       });
     }
   }
+});
+
+test("source-session-handoff authorization uses a trusted half-open evaluation window", async (t) => {
+  const initiation = loadJson(INITIATION_EXAMPLE);
+  const cases = [
+    ["missing time", undefined, "MALFORMED_REQUEST"],
+    ["null time", null, "MALFORMED_REQUEST"],
+    ["non-string time", 1, "MALFORMED_REQUEST"],
+    ["calendar-invalid time", "2026-02-30T00:00:00Z", "MALFORMED_REQUEST"],
+    ["before initiation", "2026-08-14T23:59:59.999999999999Z", "CODE_EXPIRED"],
+    ["at expiry", initiation.expires_at, "CODE_EXPIRED"],
+    ["after expiry", "2026-08-15T00:00:46Z", "CODE_EXPIRED"],
+    ["replayed old initiation", "2026-10-13T05:00:00Z", "CODE_EXPIRED"],
+  ];
+  for (const [name, now, code] of cases) {
+    await t.test(name, () => {
+      const result = assessPublishedAuthorization({ initiation, now });
+      assert.equal(result.code, code);
+      assert.equal(result.authorizationAccepted, false);
+      assert.equal(result.codeIssued, false);
+      assert.equal(result.codeConsumed, false);
+      assertNoSession(result);
+    });
+  }
+  await t.test("beginning and final fractional instant are accepted", () => {
+    for (const now of [initiation.initiated_at, "2026-08-15T00:00:44.999999999999999999Z"]) {
+      const result = assessPublishedAuthorization({ initiation, now });
+      assert.equal(result.authorizationAccepted, true);
+      assert.equal(result.codeIssued, false);
+      assertNoSession(result);
+    }
+  });
+  await t.test("browser time cannot substitute for missing trusted time", () => {
+    const request = { ...loadJson(AUTHZ_REQUEST_EXAMPLE), now: initiation.initiated_at };
+    const result = assessPublishedAuthorization({ request, schemaValidRequest: true, now: undefined });
+    assert.equal(result.code, "MALFORMED_REQUEST");
+    assert.equal(result.authorizationAccepted, false);
+    assertNoSession(result);
+  });
+  await t.test("status and binding failure precedence remains ahead of expiry", () => {
+    const now = initiation.expires_at;
+    for (const [status, code] of [["disabled", "CLIENT_DISABLED"], ["revoked", "CLIENT_REVOKED"]]) {
+      const registration = { ...publishedRegistration(), status };
+      assert.equal(assessPublishedAuthorization({ registration, now }).code, code);
+    }
+    const request = { ...loadJson(AUTHZ_REQUEST_EXAMPLE), purpose: "other-purpose" };
+    assert.equal(assessPublishedAuthorization({ request, now }).code, "PURPOSE_MISMATCH");
+    assert.deepEqual(initiation, loadJson(INITIATION_EXAMPLE));
+  });
+  assert.ok(codeSpecForTest("CODE_EXPIRED").phase.includes("authorization"));
+});
+
+function codeSpecForTest(code) {
+  return loadJson("vocab/source-session-handoff-failure-v1.0.json").codes.find((entry) => entry.code === code);
+}
+
+test("source-session-handoff rejects even RSA moduli before trusting any registered key", async (t) => {
+  const original = publishedRegistration();
+  for (const lastByte of [0, 2, 254]) {
+    await t.test(`even 2048-bit modulus ending in ${lastByte}`, () => {
+      const modulus = Buffer.alloc(256);
+      modulus[0] = 0x80;
+      modulus[255] = lastByte;
+      const key = { kty: "RSA", kid: `even-rsa-${lastByte}`, use: "sig", alg: "RS256", n: modulus.toString("base64url"), e: "Aw" };
+      assert.doesNotThrow(() => createPublicKey({ key, format: "jwk" }));
+      const only = registrationWithKeys([key], ["RS256"]);
+      assert.equal(validatorFor(REGISTRATION_SCHEMA)(only), true);
+      assertWeakRegistrationRejected(only, `even ${lastByte} used`);
+      const unused = registrationWithKeys([...original.jwks.keys, key], [...original.algorithms, "RS256"]);
+      assertWeakRegistrationRejected(unused, `even ${lastByte} unused`);
+    });
+  }
+  await t.test("genuine odd RSA control still accepts on all trust paths", () => {
+    const key = rsaMaterial(2048);
+    assert.equal(Buffer.from(key.jwk.n, "base64url").at(-1) & 1, 1);
+    const registration = registrationWithKeys([key.jwk], ["RS256"]);
+    const { response, context } = signedContextResponse(key.jwk, key.privateKey, "RS256");
+    assert.equal(redemptionResponseMatchesContext(response, context, registration), true);
+    assert.equal(registrationPermitsRedirect(registration, registration.client_ref, registration.destination_uris[0]), true);
+    assert.equal(assessPublishedAuthorization({ registration }).authorizationAccepted, true);
+    const redeemed = redemptionOf({ registration });
+    assert.equal(redeemed.codeConsumed, true);
+    assertNoSession(redeemed);
+  });
 });
