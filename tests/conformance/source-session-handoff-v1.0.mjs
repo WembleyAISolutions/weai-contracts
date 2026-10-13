@@ -3538,3 +3538,171 @@ test("source-session-handoff binds authorization purpose before issuing a code",
     assert.equal(omitted.codeIssued, false);
   });
 });
+
+test("source-session-handoff authorization rejects an invalid complete stored initiation", async (t) => {
+  const cases = [
+    ["zero lifetime", { expires_at: "2026-08-15T00:00:00Z" }],
+    ["inverted lifetime", { expires_at: "2026-08-14T23:59:59Z" }],
+    ["overlong lifetime", { expires_at: "2026-08-15T00:01:01Z" }],
+    ["fractional excess", { expires_at: "2026-08-15T00:01:00.0000000001Z" }],
+    ["impossible calendar date", { initiated_at: "2026-02-30T00:00:00Z" }],
+    ["empty scopes", { requested_record_scope_refs: [] }],
+    ["duplicate scopes", { requested_record_scope_refs: ["scope-a", "scope-a"] }],
+    ["unsorted scopes", { requested_record_scope_refs: ["scope-b", "scope-a"] }],
+    ["ambiguous scopes", { requested_record_scope_refs: ["scope-a", "scope-ab"] }],
+    ["wildcard scopes", { requested_record_scope_refs: ["scope-*"] }],
+    ["non-string scopes", { requested_record_scope_refs: [1] }],
+    ["empty string scopes", { requested_record_scope_refs: [""] }],
+    ["whitespace scopes", { requested_record_scope_refs: ["scope a"] }],
+    ["non-array scopes", { requested_record_scope_refs: "scope-a" }],
+    ["unknown field", { extension_field: "not-admitted" }],
+    ["unsupported family", { contract_family: "other" }],
+    ["unsupported version", { contract_version: "v99" }],
+    ["unsupported profile", { profile: "other" }],
+  ];
+  for (const [name, change] of cases) {
+    await t.test(name, () => {
+      const initiation = { ...loadJson(INITIATION_EXAMPLE), ...change };
+      const before = structuredClone(initiation);
+      const result = assessPublishedAuthorization({ initiation });
+      assert.equal(result.code, "MALFORMED_REQUEST", name);
+      assert.equal(result.authorizationAccepted, false, name);
+      assert.equal(result.codeIssued, false, name);
+      assert.equal(result.contextAccepted, false, name);
+      assertNoSession(result);
+      assert.deepEqual(initiation, before, name);
+    });
+  }
+  await t.test("every missing required initiation field fails closed", () => {
+    for (const field of loadJson(INITIATION_SCHEMA).required) {
+      const initiation = loadJson(INITIATION_EXAMPLE);
+      delete initiation[field];
+      const result = assessPublishedAuthorization({ initiation });
+      assert.equal(result.code, "MALFORMED_REQUEST", field);
+      assert.equal(result.authorizationAccepted, false, field);
+      assert.equal(result.codeIssued, false, field);
+      assertNoSession(result);
+    }
+  });
+  await t.test("valid exact and fractional windows and sorted scopes remain accepted", () => {
+    for (const expires_at of ["2026-08-15T00:00:00.0000000001Z", "2026-08-15T00:01:00Z"]) {
+      const initiation = loadJson(INITIATION_EXAMPLE);
+      initiation.expires_at = expires_at;
+      initiation.requested_record_scope_refs = ["scope-a", "scope-b"];
+      const result = assessPublishedAuthorization({ initiation });
+      assert.equal(result.authorizationAccepted, true);
+      assert.equal(result.codeIssued, false);
+      assertNoSession(result);
+    }
+  });
+  await t.test("historical semantic-invalid initiation fixtures deny authorization", () => {
+    for (const item of manifest.source_session_handoff_v1_semantic.filter((item) => item.schema === INITIATION_SCHEMA)) {
+      const result = assessPublishedAuthorization({ initiation: loadJson(item.fixture) });
+      assert.equal(result.authorizationAccepted, false, item.fixture);
+      assert.equal(result.code, "MALFORMED_REQUEST", item.fixture);
+      assert.equal(result.codeIssued, false);
+      assertNoSession(result);
+    }
+  });
+});
+
+test("source-session-handoff validates all EC and OKP public key material", async (t) => {
+  const validateRegistration = validatorFor(REGISTRATION_SCHEMA);
+  const materials = [
+    ["P-256", "ES256", "prime256v1", 32],
+    ["P-384", "ES384", "secp384r1", 48],
+    ["P-521", "ES512", "secp521r1", 66],
+    ["Ed25519", "EdDSA", null, 32],
+  ];
+  for (const [curve, alg, namedCurve, length] of materials) {
+    const pair = namedCurve === null ? generateKeyPairSync("ed25519") : generateKeyPairSync("ec", { namedCurve });
+    const jwk = publicJwk(pair.publicKey, `valid-${curve}`, alg);
+    await t.test(`${curve} genuine generated key accepts on every trust path`, () => {
+      const registration = registrationWithKeys([jwk], [alg]);
+      const { response, context } = signedContextResponse(jwk, pair.privateKey, alg);
+      assert.equal(validateRegistration(registration), true);
+      assert.equal(redemptionResponseMatchesContext(response, context, registration), true);
+      assert.equal(registrationPermitsRedirect(registration, registration.client_ref, registration.destination_uris[0]), true);
+      assert.equal(assessPublishedAuthorization({ registration }).authorizationAccepted, true);
+      const redeemed = redemptionOf({ registration });
+      assert.equal(redeemed.codeConsumed, true);
+      assertNoSession(redeemed);
+    });
+    const fields = namedCurve === null ? ["x"] : ["x", "y"];
+    for (const field of fields) {
+      for (const size of [1, length - 1, length + 1]) {
+        await t.test(`${curve} ${field} length ${size} rejects used and unused keys`, () => {
+          const invalid = { ...jwk, [field]: Buffer.alloc(size, 1).toString("base64url") };
+          const only = registrationWithKeys([invalid], [alg]);
+          assert.equal(validateRegistration(only), true);
+          assertWeakRegistrationRejected(only, `${curve} ${field} ${size}`);
+          const original = publishedRegistration();
+          const mixed = registrationWithKeys([...original.jwks.keys, invalid], [...new Set([...original.algorithms, alg])]);
+          assert.equal(validateRegistration(mixed), true);
+          assertWeakRegistrationRejected(mixed, `unused ${curve} ${field} ${size}`);
+        });
+      }
+    }
+    await t.test(`${curve} malformed full-length curve material rejects the registration`, () => {
+      const invalid = { ...jwk, x: Buffer.alloc(length, 0xff).toString("base64url") };
+      if (namedCurve !== null) invalid.y = Buffer.alloc(length).toString("base64url");
+      const original = publishedRegistration();
+      const registration = registrationWithKeys([...original.jwks.keys, invalid], [...new Set([...original.algorithms, alg])]);
+      assert.equal(validateRegistration(registration), true);
+      assertWeakRegistrationRejected(registration, `${curve} curve material`);
+    });
+    await t.test(`${curve} algorithm/curve mismatch fails closed`, () => {
+      const invalid = { ...jwk, alg: alg === "ES256" ? "ES384" : "ES256" };
+      assertWeakRegistrationRejected(registrationWithKeys([invalid], [invalid.alg]), `${curve} mismatched algorithm`);
+    });
+    if (length % 3 !== 0) {
+      await t.test(`${curve} noncanonical coordinate pad bits reject unused keys`, () => {
+        const alias = unusedBitAlias(jwk.x);
+        assert.notEqual(alias, null);
+        const invalid = { ...jwk, x: alias };
+        const original = publishedRegistration();
+        const registration = registrationWithKeys([...original.jwks.keys, invalid], [...new Set([...original.algorithms, alg])]);
+        assert.equal(validateRegistration(registration), true);
+        assertWeakRegistrationRejected(registration, `${curve} pad bits`);
+      });
+    }
+  }
+  await t.test("Ed25519 import alone does not establish a valid curve point", () => {
+    const original = publishedRegistration();
+    // y=2 has no recovered x; y=1 with sign=1 is noncanonical; zero and
+    // identity are small-order points; y=p is outside the field.
+    const fieldPrime = Buffer.from(`ed${"ff".repeat(30)}7f`, "hex");
+    const badPoints = [Buffer.alloc(32), Buffer.from(`01${"00".repeat(31)}`, "hex"),
+      Buffer.from(`02${"00".repeat(31)}`, "hex"), Buffer.from(`01${"00".repeat(30)}80`, "hex"), fieldPrime];
+    for (const bytes of badPoints) {
+      const invalid = { ...original.jwks.keys[0], kid: "bad-ed-point", x: bytes.toString("base64url") };
+      assert.doesNotThrow(() => createPublicKey({ key: invalid, format: "jwk" }));
+      const registration = registrationWithKeys([...original.jwks.keys, invalid], original.algorithms);
+      assert.equal(validateRegistration(registration), true);
+      assertWeakRegistrationRejected(registration, `Ed25519 ${bytes.toString("hex")}`);
+    }
+  });
+});
+
+test("source-session-handoff RSA unsigned integers must be minimally encoded", async (t) => {
+  const key = rsaMaterial(2048, "RS256", "rsa-minimal-2048");
+  const { response, context } = signedContextResponse(key.jwk, key.privateKey, "RS256");
+  const valid = registrationWithKeys([key.jwk], ["RS256"]);
+  assert.equal(redemptionResponseMatchesContext(response, context, valid), true);
+  for (const field of ["n", "e"]) {
+    for (const zeroBytes of [1, 2]) {
+      await t.test(`${field} with ${zeroBytes} leading zero octets rejects used and unused keys`, () => {
+        const padded = { ...key.jwk, [field]: Buffer.concat([Buffer.alloc(zeroBytes), Buffer.from(key.jwk[field], "base64url")]).toString("base64url") };
+        assert.equal(Buffer.from(padded[field], "base64url").toString("base64url"), padded[field]);
+        assert.equal(rsaSignatureHolds(response.assertion, padded), true, "Node accepts the alias");
+        const only = registrationWithKeys([padded], ["RS256"]);
+        assert.equal(validatorFor(REGISTRATION_SCHEMA)(only), true);
+        assert.equal(redemptionResponseMatchesContext(response, context, only), false);
+        assertWeakRegistrationRejected(only, `${field} padded used key`);
+        const original = publishedRegistration();
+        const mixed = registrationWithKeys([...original.jwks.keys, padded], [...original.algorithms, "RS256"]);
+        assertWeakRegistrationRejected(mixed, `${field} padded unused key`);
+      });
+    }
+  }
+});
